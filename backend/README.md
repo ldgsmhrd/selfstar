@@ -78,7 +78,7 @@ DB_NAME=cgi_25IS_LI1_p3_3
 # 카카오 OAuth
 KAKAO_CLIENT_ID=YOUR_REST_API_KEY
 KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
-KAKAO_SCOPE=profile_nickname,profile_image,account_email
+KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제거(계정 이메일 제외)
 KAKAO_ADMIN_KEY=YOUR_ADMIN_KEY
 ```
 
@@ -147,6 +147,7 @@ pytest -q
 ## 트러블슈팅
 - DB 연결 오류: `.env`의 DB_HOST/PORT/USER/PASS/NAME 확인, 방화벽/보안그룹 확인
 - OAuth 리다이렉트 오류: `KAKAO_REDIRECT_URI`가 카카오 앱 설정과 일치하는지 확인
+- 카카오 이메일 동의가 계속 뜸: `.env`의 `KAKAO_SCOPE`에서 `account_email`을 제거하세요. 백엔드(`app/api/routes/auth.py`)는 안전장치로 scope에 `email` 문자열이 포함되면 자동 제거하여 카카오에 전달하지 않습니다. 또한 카카오 개발자 콘솔의 동의 항목에서 이메일을 미사용으로 설정해야 완전히 제거됩니다.
 - 쿠키가 안 실릴 때: CORS 오리진, SameSite, 프론트 호출 방식(프록시 vs 절대경로) 점검
 - 401/세션 누락: 브라우저 쿠키 차단 여부, `SESSION_SECRET` 설정 확인
 

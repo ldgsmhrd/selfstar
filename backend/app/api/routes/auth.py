@@ -21,7 +21,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # ----- Env (base values) -----
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5174")
-KAKAO_SCOPE = os.getenv("KAKAO_SCOPE", "")  # e.g. "profile_nickname,profile_image,account_email"
+KAKAO_SCOPE = os.getenv("KAKAO_SCOPE", "profile_nickname,profile_image")  # 기본값에서 이메일 요청 제거
 KAKAO_ADMIN_KEY = os.getenv("KAKAO_ADMIN_KEY")
 
 
@@ -67,9 +67,21 @@ async def kakao_login():
         "prompt": "login",
     }
     if KAKAO_SCOPE:
-        params["scope"] = KAKAO_SCOPE
+        # 안전장치: 환경 변수에 실수로 account_email 등이 들어가도 제거
+        scope_tokens = [
+            t.strip()
+            for t in KAKAO_SCOPE.split(",")
+            if t.strip() and "email" not in t.strip().lower()
+        ]
+        if scope_tokens:
+            params["scope"] = ",".join(scope_tokens)
     url = "https://kauth.kakao.com/oauth/authorize?" + urlencode(params)
     return RedirectResponse(url)
+
+# 과거 프론트에서 /auth/kakao 로 접근하는 호환 경로 지원
+@router.get("/kakao")
+async def kakao_login_alias():
+    return await kakao_login()
 
 
 # ----- Kakao Callback -----
@@ -84,12 +96,16 @@ async def kakao_callback(request: Request):
     # Read dynamically
     KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
     KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", f"{BACKEND_URL}/auth/kakao/callback")
+    KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
     token_payload = {
         "grant_type": "authorization_code",
         "client_id": KAKAO_CLIENT_ID,
         "redirect_uri": KAKAO_REDIRECT_URI,
         "code": code,
     }
+    # Kakao 앱에서 Client Secret 사용이 활성화된 경우 필수
+    if KAKAO_CLIENT_SECRET:
+        token_payload["client_secret"] = KAKAO_CLIENT_SECRET
 
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(token_url, data=token_payload)

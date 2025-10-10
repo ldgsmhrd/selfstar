@@ -17,7 +17,7 @@ async def find_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
     async with pool.acquire() as conn, await _dict_cursor(conn) as cur:
         await cur.execute(
             """
-            SELECT user_id, user_platform, user_inherent, user_name, user_email,
+            SELECT user_id, user_platform, user_inherent, user_name,
                    user_nick, user_img, user_gender, user_phone, user_age,
                    user_birthday, user_language, user_credit, joined_at
             FROM ss_user
@@ -39,7 +39,7 @@ async def find_user_by_inherent(
         if provider:
             await cur.execute(
                 """
-                SELECT user_id, user_platform, user_inherent, user_name, user_email,
+                SELECT user_id, user_platform, user_inherent, user_name,
                        user_nick, user_img, user_gender, user_phone, user_age,
                        user_birthday, user_language, user_credit, joined_at
                 FROM ss_user
@@ -51,7 +51,7 @@ async def find_user_by_inherent(
         else:
             await cur.execute(
                 """
-                SELECT user_id, user_platform, user_inherent, user_name, user_email,
+                SELECT user_id, user_platform, user_inherent, user_name,
                        user_nick, user_img, user_gender, user_phone, user_age,
                        user_birthday, user_language, user_credit, joined_at
                 FROM ss_user
@@ -70,17 +70,16 @@ async def create_user(user: Dict[str, Any]) -> Dict[str, Any]:
         await cur.execute(
             """
             INSERT INTO ss_user
-              (user_platform, user_inherent, user_name, user_email, user_nick, user_img,
+              (user_platform, user_inherent, user_name, user_nick, user_img,
                user_gender, user_phone, user_age, user_birthday, user_language, user_credit, joined_at)
             VALUES
-              (%s, %s, %s, %s, %s, %s,
-               %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+              (%s, %s, %s, %s, %s,
+               %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """,
             (
                 user.get("user_platform"),
                 user.get("user_inherent"),
                 user.get("user_name"),
-                user.get("user_email"),
                 user.get("user_nick"),
                 user.get("user_img"),
                 user.get("user_gender"),
@@ -130,7 +129,7 @@ async def upsert_user_from_oauth(
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(
                 """
-                SELECT user_id, user_platform, user_inherent, user_name, user_email,
+                SELECT user_id, user_platform, user_inherent, user_name,
                        user_nick, user_img, user_gender, user_phone, user_age,
                        user_birthday, user_language, user_credit, joined_at
                 FROM ss_user
