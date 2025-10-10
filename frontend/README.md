@@ -22,13 +22,13 @@ frontend/
 - Node.js 18+ (LTS 권장)
 
 ### 설치 & 실행
-```
+```bash
 cd frontend
 cp .env.example .env              # 필요 시 수정
 npm install
-npm run dev
+npm run dev -- --port 5174        # 반드시 5174 포트로 실행
 ```
-브라우저: http://localhost:5173
+브라우저: http://localhost:5174
 
 백엔드도 실행 중이어야 헬스 호출이 성공합니다 (기본: http://localhost:8000).
 
@@ -40,13 +40,19 @@ VITE_API_BASE_URL=http://localhost:8000
 # Kakao OAuth (프론트는 보통 백엔드 리다이렉트만 사용)
 KAKAO_CLIENT_ID=your-kakao-rest-api-key
 KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
-KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제거(계정 이메일 제외)
+KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제외
 ```
 
 ### 헬스 호출 로직
 `src/api/client.js` → `getHealth()` → `/health` GET 요청
 `src/hooks/useHealth.js` → 로딩/에러/데이터 상태 관리
 `src/components/HealthStatus.jsx` → UI 표시 & 새로고침 버튼
+
+### 개발 체크리스트
+- 반드시 5174 포트로 실행 (Vite 기본값 5173 아님)
+- `.env`의 API 주소/카카오 설정 확인
+- 백엔드가 실행 중이어야 정상 동작
+- 카카오 OAuth 이메일 동의창이 뜨지 않도록 `KAKAO_SCOPE`에 `account_email` 미포함
 
 ### 빌드 & 미리보기
 ```
