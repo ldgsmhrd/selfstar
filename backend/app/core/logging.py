@@ -1,18 +1,11 @@
 import logging
-import sys
 
-LOG_LEVEL = logging.getLevelName("INFO")
+_logger = None
 
-handler = logging.StreamHandler(sys.stdout)
-formatter = logging.Formatter(
-    "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-    "%Y-%m-%d %H:%M:%S",
-)
-handler.setFormatter(formatter)
 
-logger = logging.getLogger("app")
-if not logger.handlers:
-    logger.addHandler(handler)
-logger.setLevel(LOG_LEVEL)
-
-__all__ = ["logger"]
+def get_logger(name: str = "app") -> logging.Logger:
+    global _logger
+    if _logger is None:
+        logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(asctime)s - %(name)s - %(message)s")
+        _logger = logging.getLogger(name)
+    return logging.getLogger(name)

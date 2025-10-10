@@ -36,6 +36,11 @@ npm run dev
 `.env` (Vite 규칙: `VITE_` prefix 필요)
 ```
 VITE_API_BASE_URL=http://localhost:8000
+
+# Kakao OAuth (프론트는 보통 백엔드 리다이렉트만 사용)
+KAKAO_CLIENT_ID=your-kakao-rest-api-key
+KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
+KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제거(계정 이메일 제외)
 ```
 
 ### 헬스 호출 로직
@@ -48,6 +53,12 @@ VITE_API_BASE_URL=http://localhost:8000
 npm run build
 npm run preview
 ```
+
+### 카카오 이메일 동의 차단
+- 이메일 권한을 사용하지 않으려면 `.env`의 `KAKAO_SCOPE`에서 `account_email`을 제거하세요.
+- 프론트는 백엔드의 `/auth/kakao`(또는 `/auth/kakao/login`)로만 이동하므로 추가 코드는 필요 없습니다.
+- 백엔드에서 scope 내 `email` 문자열은 안전장치로 필터링되어 카카오에 전달되지 않습니다.
+- 카카오 개발자 콘솔에서도 이메일 동의 항목을 미사용으로 설정해야 동의창에서 완전히 사라집니다.
 
 ### 추후 확장 아이디어
 - 전역 상태 (Zustand, Recoil, Redux Toolkit 등)

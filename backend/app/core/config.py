@@ -1,18 +1,14 @@
-from functools import lru_cache
-from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from backend root and app folder (backend/app)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=True)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
+class Settings:
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5174")
+    STRICT_CORS: bool = os.getenv("STRICT_CORS", "0") == "1"
+    SESSION_SECRET: str = os.getenv("SESSION_SECRET", "default_secret_key")
+    BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
 
-class Settings(BaseModel):
-    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "SelfStar Backend")
-    VERSION: str = os.getenv("VERSION", "0.1.0")
-    ENV: str = os.getenv("ENV", "dev")
-    ALLOWED_ORIGINS: list[str] = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")]
-
-
-@lru_cache(maxsize=1)
-def get_settings() -> Settings:
-    return Settings()
+settings = Settings()
