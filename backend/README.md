@@ -68,6 +68,10 @@ STRICT_CORS=0                 # 1이면 FRONTEND_URL만 허용, 기본은 * 허�
 SESSION_SECRET=change-me
 SESSION_COOKIE_NAME=sid       # 옵션
 
+# AI 서비스 (선택)
+# 별도의 AI FastAPI를 8600 포트로 띄운 경우, 백엔드가 이 URL로 위임합니다.
+AI_SERVICE_URL=http://localhost:8600
+
 # DB (프로젝트 DB 예시 값)
 DB_HOST=project-db-cgi.smhrd.com
 DB_PORT=3307
@@ -80,6 +84,11 @@ KAKAO_CLIENT_ID=YOUR_REST_API_KEY
 KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
 KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제거(계정 이메일 제외)
 KAKAO_ADMIN_KEY=YOUR_ADMIN_KEY
+
+# 구글 OAuth (선택)
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 ```
 
 ## 실행 (개발 모드)
@@ -108,8 +117,13 @@ python -m app
 	- `GET /auth/me` → 세션 기반 사용자 정보
 	- `POST /auth/logout` → 로그아웃(세션 clear)
 	- `POST /auth/kakao/unlink` → 카카오 연결 해제(관리자 키 필요)
-- Posts(예시)
 	- `GET /` (posts 라우터 기준) → posts 라우트 작동 확인
+
+### 이미지 생성 위임 API
+- `POST /api/image/generate`
+  - 요청: `{ name, gender, feature?, options[] }`
+  - 동작: `.env`의 `AI_SERVICE_URL`이 설정되면 AI 서버의 `/predict`로 위임하여 data URL을 반환합니다.
+  - 미설정/장애 시: 로컬 SVG data URL을 생성하여 반환하는 안전한 폴백을 수행합니다.
 
 주의: `/health` 엔드포인트는 현재 기본 앱에 포함되어 있지 않습니다. 필요하면 `app/main.py`에 간단히 추가하세요.
 → 현재 저장소에는 `/health`가 구현되어 있어 테스트가 통과합니다.

@@ -19,13 +19,40 @@ ai/
 		00_mlflow_init.ipynb   # MLflow 초기 확인 노트북
 ```
 
-## 다음 확장 아이디어
-- MLflow 추적/모델 레지스트리
-- vLLM 실제 실행 커맨드 & Dockerfile
-- features / data / config 디렉토리 추가
-- 모델 추론 API (/predict, /llm/chat)
+## 이미지 생성 서빙 (Gemini)
+`serving/fastapi_app/main.py`는 동적 임포트를 통해 이미지 생성 함수를 호출합니다. 기본 구현은 `ai.models.imagemodel_gemini.generate_image`입니다.
 
-필요 시 확장 요청 주세요.
+### 환경 변수
+- `GOOGLE_API_KEY` (필수)
+- `AI_MODEL_MODULE` (기본값: `ai.models.imagemodel_gemini`)
+- `AI_MODEL_FUNC` (기본값: `generate_image`)
+- `GEMINI_IMAGE_MODEL` (기본값: `gemini-2.5-flash-image-preview`)
+
+Windows PowerShell에서 일시 설정 예:
+```powershell
+$env:GOOGLE_API_KEY = "<YOUR_KEY>"
+$env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini"; $env:AI_MODEL_FUNC = "generate_image"
+```
+
+### 실행
+```powershell
+pip install -r ai/requirements.txt
+python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
+```
+
+### API
+- `GET /health` → 서비스 상태
+- `POST /predict` → 입력(name, gender, feature, options)으로 PNG data URL 반환
+
+요청 바디 예시:
+```json
+{ "name": "홍길동", "gender": "남성", "feature": "짧은머리", "options": ["안경"] }
+```
+
+응답 예시:
+```json
+{ "ok": true, "image": "data:image/png;base64,..." }
+```
 
 ## MLflow 최소 사용법
 1. 의존성 설치 (루트에서):

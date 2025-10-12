@@ -112,6 +112,26 @@ function Home() {
   const toggle = (opt) =>
     setSelected((prev) => (prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt]));
 
+  const [generated, setGenerated] = useState(null);
+
+  const onGenerate = async () => {
+    setGenerated(null);
+    try {
+      const res = await fetch(`${API}/api/image/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ name, gender, feature, options: selected }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data?.ok) throw new Error("generation failed");
+      setGenerated(data.image);
+    } catch (e) {
+      alert(`이미지 생성 실패: ${e?.message || e}`);
+    }
+  };
+
   return (
     <>
       <main className="mx-auto max-w-6xl px-6 py-20">
@@ -120,7 +140,11 @@ function Home() {
           <section className="card overflow-hidden">
             <div className="bg-black flex items-center justify-center">
               <div className="relative w-[520px] h-[520px]">
-                <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_10%_0%,rgba(255,255,255,0.12),transparent_60%)] pointer-events-none" />
+                {generated ? (
+                  <img src={generated} alt="generated" className="absolute inset-0 w-full h-full object-contain"/>
+                ) : (
+                  <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_10%_0%,rgba(255,255,255,0.12),transparent_60%)] pointer-events-none" />
+                )}
               </div>
             </div>
             <div className="p-5 bg-blue-50">
@@ -195,8 +219,8 @@ function Home() {
             </div>
 
             <div className="flex justify-end mt-20 mr-1">
-              <button className="btn-primary" onClick={() => alert("인플루언서 생성 준비중입니다.")}>
-                인플루언서 생성
+              <button className="btn-primary" onClick={onGenerate}>
+                이미지 생성
               </button>
             </div>
           </section>

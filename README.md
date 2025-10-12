@@ -85,6 +85,46 @@ KAKAO_SCOPE=profile_nickname,profile_image
   - `serving/` : FastAPI 앱, vLLM 서버 스크립트
   - `notebooks/` : MLflow 초기화 노트북
 
+### AI FastAPI Serving (Gemini 이미지 생성)
+Gemini 기반의 이미지 생성 모델을 FastAPI로 서빙합니다. 동적 임포트로 모델 함수를 선택합니다.
+
+- 기본 엔드포인트:
+  - `GET /health` → `{ status: "ok", service: "ai-serving" }`
+  - `POST /predict` → 입력(name, gender, feature, options)으로 이미지 data URL 반환
+
+- 환경변수
+  - `GOOGLE_API_KEY` (필수): Google Generative AI API 키
+  - `AI_MODEL_MODULE` (선택, 기본 `ai.models.imagemodel_gemini`)
+  - `AI_MODEL_FUNC` (선택, 기본 `generate_image`)
+  - `GEMINI_IMAGE_MODEL` (선택, 기본 `gemini-2.5-flash-image-preview`)
+
+- 실행 방법 (권장 포트: 8600)
+  - 의존성 설치
+    ```powershell
+    pip install -r ai/requirements.txt
+    ```
+  - Windows PowerShell에서 환경변수 설정
+    - 현재 세션만: ` $env:GOOGLE_API_KEY = "<YOUR_KEY>" `
+    - 영구(새 세션부터 적용): ` setx GOOGLE_API_KEY "<YOUR_KEY>" `
+    - 선택적으로 동적 모델 지정:
+      ```powershell
+      $env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini"; $env:AI_MODEL_FUNC = "generate_image"
+      ```
+  - 개발 서버 실행
+    ```powershell
+    python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
+    ```
+
+- 요청/응답 예시
+  - Request (POST /predict)
+    ```json
+    { "name": "홍길동", "gender": "남성", "feature": "짧은머리", "options": ["안경"] }
+    ```
+  - Response
+    ```json
+    { "ok": true, "image": "data:image/png;base64,iVBORw0K..." }
+    ```
+
 ### MLflow 실행 예시
 ```bash
 pip install -r ai/requirements.txt
@@ -97,6 +137,24 @@ MLflow UI: [http://localhost:5500](http://localhost:5500)
 cd ai/serving/vllm_server
 bash start_vllm.sh
 ```
+
+### 백엔드 연동 (프록시 역할)
+백엔드는 `AI_SERVICE_URL`이 설정되면 `/api/image/generate` 요청을 AI 서버의 `/predict`로 위임합니다.
+
+- 예: `AI_SERVICE_URL=http://localhost:8600`
+- 엔드포인트: `POST /api/image/generate` → `{ ok: true, image: "data:..." }`
+
+---
+
+## E2E 점검 순서 체크리스트
+1) AI 서버 기동
+  - `GET http://localhost:8600/health` → 200, `{status:"ok"}`
+  - `POST http://localhost:8600/predict` → 200, data URL 포함
+2) 백엔드 기동 (`http://localhost:8000`)
+  - `.env`에 `AI_SERVICE_URL=http://localhost:8600` 설정
+  - `POST http://localhost:8000/api/image/generate` → 200, data URL 포함
+3) 프론트엔드 기동 (`http://localhost:5174`)
+  - 이미지 생성 UI/호출이 있다면 결과 표시 확인
 
 ---
 
