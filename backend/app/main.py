@@ -58,7 +58,8 @@ app.add_middleware(
 
 # ===== Session (쿠키 기반) =====
 SESSION_SECRET = settings.SESSION_SECRET
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET)
+# 세션을 1일(86400초) 동안 유지
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, max_age=86400)
 
 # Debugging: Log session secret and MySQL pool initialization
 logger.info(f"SESSION_SECRET: {SESSION_SECRET}")

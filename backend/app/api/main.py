@@ -37,6 +37,7 @@ app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "selfstar-secret"),
     session_cookie=os.getenv("SESSION_COOKIE_NAME", "sid"),
+    max_age=86400,  # 1일(86400초)
     # same_site="none",   # ← 5174에서 8000을 절대경로로 직접 호출할 때만 해제
     # https_only=False,   # ← 로컬 개발용
 )
