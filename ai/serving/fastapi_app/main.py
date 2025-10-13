@@ -71,8 +71,12 @@ MODEL_FN = _dynamic_model()
 @app.post("/predict")
 def predict(req: PredictRequest):
     try:
+        # If Pillow is missing, respond with a minimal placeholder image instead of 500
         if Image is None:
-            raise RuntimeError("Pillow not installed. Install ai/requirements.txt (needs Pillow).")
+            log.warning("Pillow not installed; returning placeholder image. Install ai/requirements.txt to enable text rendering.")
+            # 1x1 transparent PNG
+            tiny_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
+            return {"ok": True, "image": f"data:image/png;base64,{tiny_png_b64}"}
 
         # 동적 모델이 있으면 우선 사용
         if callable(MODEL_FN):
