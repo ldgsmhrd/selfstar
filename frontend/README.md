@@ -1,8 +1,8 @@
-Frontend (React + Vite)
+# Frontend (React + Vite)
 
 역할
 - 이미지 생성 UI 및 결과 표시
-- 개발 중에는 Vite dev server(5174)로 동작하며 /auth, /api, /media는 백엔드(8000)로 프록시됨
+- 개발 중에는 Vite dev server(5174)로 동작하며 `/auth`, `/api`, `/media`는 백엔드(8000)로 프록시됨
 
 필수 요구사항
 - Node.js 18+
@@ -11,12 +11,12 @@ Frontend (React + Vite)
 ```powershell
 cd frontend
 npm ci
-npm run dev
+npm run dev -- --port 5174
 # http://localhost:5174
 ```
 
 프록시 설정
-- `vite.config.js`에 /auth, /api, /media → `http://localhost:8000` 프록시가 잡혀 있습니다.
+- `vite.config.js`에 `/auth`, `/api`, `/media` → `http://localhost:8000` 프록시가 설정되어 있습니다.
 
 이미지 표시 로직
 - 백엔드가 반환하는 `url`이 있으면 우선 사용: `<img src="/media/xxx.png" />`
@@ -46,7 +46,7 @@ frontend/
 cd frontend
 cp .env.example .env              # 필요 시 수정
 npm install
-npm run dev -- --port 5174        # 반드시 5174 포트로 실행
+npm run dev -- --port 5174        # 반드시 5174 포트로 실행(프록시와 일치)
 ```
 브라우저: http://localhost:5174
 
@@ -61,6 +61,9 @@ VITE_API_BASE_URL=http://localhost:8000
 KAKAO_CLIENT_ID=your-kakao-rest-api-key
 KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
 KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제외
+
+# Google OAuth (리다이렉트는 백엔드에서 처리)
+# 보통 프론트는 백엔드의 /auth/google/login 링크만 사용합니다.
 ```
 
 ### 헬스 호출 로직
@@ -73,6 +76,7 @@ KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제외
 - `.env`의 API 주소/카카오 설정 확인
 - 백엔드가 실행 중이어야 정상 동작
 - 카카오 OAuth 이메일 동의창이 뜨지 않도록 `KAKAO_SCOPE`에 `account_email` 미포함
+ - 구글 로그인은 `/auth/google/login`으로 이동 → 콜백 후 프론트로 `/?login=success`
 
 ### 빌드 & 미리보기
 ```
@@ -95,4 +99,4 @@ npm run preview
 - 테스트 (Jest + React Testing Library)
 
 ---
-초기 React 프론트엔드 스캐폴드 완료.
+초기 React 프론트엔드 스캐폴드 완료. 현재 백엔드 `/auth` 및 `/api`와 연동되어 동작합니다.
