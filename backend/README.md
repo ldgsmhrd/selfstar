@@ -29,8 +29,6 @@ backend/
 ```
 
 ## 요구 사항
-- Python 3.12+ 권장
-- MySQL 접근 가능 환경 (프로젝트 DB 또는 로컬)
 
 ## 설치 (Windows PowerShell 기준)
 프로젝트 루트는 `backend/` 입니다.
@@ -46,6 +44,48 @@ python -m pip install --upgrade pip
 ```powershell
 pip install -r requirements.txt
 ```
+Backend (FastAPI)
+
+역할
+- 인증(Kakao 등)과 세션 관리
+- 이미지 생성 요청을 AI 서버로 위임 → data URI 수신 후 파일 저장(/media)
+- 프론트 개발 서버 프록시 대상(/auth, /api, /media)
+
+필수 요구사항
+- Python 3.12+
+
+설치
+```powershell
+cd backend
+python -m venv .venv
+. .venv/Scripts/Activate.ps1
+pip install -r requirements.txt
+```
+
+환경 변수(예시)
+```powershell
+$env:AI_SERVICE_URL = "http://localhost:8600"
+$env:BACKEND_URL    = "http://localhost:8000"
+$env:FRONTEND_URL   = "http://localhost:5174"
+$env:SESSION_SECRET = "selfstar-secret"
+# 선택: $env:MEDIA_ROOT = "C:\\path\\to\\media"  # 기본: backend/app/media
+```
+
+실행
+```powershell
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Health: http://localhost:8000/health
+```
+
+주요 라우트
+- GET /health
+- POST /api/image/generate → { ok, image: dataURI, url?: /media/xxx.png }
+	- AI로 위임 성공 시 data URI를 디코드해 파일 저장 후 url도 함께 반환
+- 정적 /media → 이미지 파일 제공
+
+참고
+- `app/main.py`에서 /media를 StaticFiles로 마운트합니다.
+- `app/api/routes/images.py`에서 저장 경로와 URL을 동기화했습니다.
 
 참고: 현재 코드에서 aiomysql/SQLAlchemy를 사용합니다. 만약 실행 시 해당 모듈이 없다는 에러가 나면 아래로 설치 후, 필요 시 `requirements.txt`에 반영하세요.
 ```powershell

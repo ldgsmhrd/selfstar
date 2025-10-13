@@ -1,8 +1,129 @@
 # selfstar 프로젝트 통합 안내
 
-본 프로젝트는 AI, 백엔드(FastAPI), 프론트엔드(React+Vite)로 구성된 풀스택 서비스입니다. 각 서비스별 폴더 구조, 실행 방법, 환경설정, 주요 포트, 개발 체크리스트를 아래에 상세히 안내합니다.
+SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
 
-## 전체 폴더 구조
+이 레포는 세 부분으로 구성된 모노레포입니다.
+- AI 서버: 이미지 생성(제미나이) FastAPI 서빙 [`ai/`]
+- 백엔드 API: 인증/이미지 생성 위임/정적 미디어 서빙 [`backend/`]
+- 프론트엔드: React + Vite UI [`frontend/`]
+
+아래 가이드는 Windows(PowerShell) 기준으로 작성되어 있습니다.
+
+필수 요구사항
+- Python 3.12+ (AI, Backend)
+- Node.js 18+ (Frontend)
+- Google API Key (Gemini 이미지 생성)
+
+포트 사용
+- AI: 8600
+- Backend: 8000
+- Frontend (Vite): 5174
+
+레포 구조(요약)
+```
+ai/
+  serving/fastapi_app/main.py    # AI FastAPI 서버 (uvicorn으로 8600)
+  models/imagemodel_gemini.py    # Gemini 이미지 모델 호출
+  requirements.txt               # AI 의존성
+backend/
+  app/main.py                    # Backend FastAPI 엔트리(8000)
+  app/api/routes/images.py       # /api/image/generate -> AI에 위임 후 /media 저장
+  requirements.txt               # Backend 의존성
+frontend/
+  src/page/App.jsx               # 메인 화면: 이미지 생성/표시
+  vite.config.js                 # /auth, /api, /media 프록시 → :8000
+```
+
+설치 및 실행 (Windows, PowerShell)
+1) AI 서버
+```
+cd ai
+python -m venv .venv
+. .venv/Scripts/Activate.ps1
+pip install -r requirements.txt
+
+# 환경 변수 (PowerShell):
+$env:GOOGLE_API_KEY = "<YOUR_API_KEY>"
+$env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini"
+$env:AI_MODEL_FUNC   = "generate_image"
+$env:AI_REQUIRE_MODEL = "true"  # 제미나이 강제, 폴백 금지
+
+python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
+# Health: http://localhost:8600/health
+# 생성:  POST http://localhost:8600/predict
+```
+
+2) Backend
+```
+cd backend
+python -m venv .venv
+. .venv/Scripts/Activate.ps1
+pip install -r requirements.txt
+
+# .env 또는 환경 변수 설정
+$env:AI_SERVICE_URL = "http://localhost:8600"
+$env:BACKEND_URL    = "http://localhost:8000"
+$env:FRONTEND_URL   = "http://localhost:5174"
+$env:SESSION_SECRET = "selfstar-secret"
+# 미디어 저장 경로(선택): 기본은 backend/app/media
+# $env:MEDIA_ROOT = "C:\\path\\to\\media"
+
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Health: http://localhost:8000/health
+# 이미지 생성(프록시): POST http://localhost:8000/api/image/generate
+# 저장된 파일: http://localhost:8000/media/<파일명>
+```
+
+3) Frontend
+```
+cd frontend
+npm ci
+npm run dev
+# http://localhost:5174
+```
+
+동작 원리 (이미지 생성 흐름)
+1) 프론트: /api/image/generate 요청 → 백엔드
+2) 백엔드: AI 서버(/predict)에 위임
+3) AI: 제미나이 호출 → 이미지 바이트 확보 후 PNG로 표준화하여 data URI 반환
+4) 백엔드: data URI를 디코드해 app/media에 저장하고 "url"(예: /media/xxx.png)과 함께 응답
+5) 프론트: 응답의 url이 있으면 우선 사용하여 <img src="/media/...">로 표시
+
+중요 환경 변수
+- GOOGLE_API_KEY: Gemini API Key
+- AI_MODEL_MODULE, AI_MODEL_FUNC: 동적 모델 로딩(기본: 제미나이)
+- AI_REQUIRE_MODEL=true: 폴백 비활성화(모델 필수)
+- AI_SERVICE_URL: 백엔드가 위임할 AI 서버 URL
+- BACKEND_URL, FRONTEND_URL: CORS/리다이렉트 등에 사용
+- MEDIA_ROOT: 백엔드에서 이미지 저장 디렉터리(기본: backend/app/media)
+
+문제 해결 가이드
+- 포트 충돌(WinError 10048):
+  ```powershell
+  Get-NetTCPConnection -LocalPort 8000,8600,5174 -State Listen
+  # PID 확인 후 종료
+  Stop-Process -Id <PID> -Force
+  ```
+- 제미나이 키 누락: AI 서버 로그에 GOOGLE_API_KEY 경고 → 환경 변수 확인
+- 프론트에서 이미지가 안 보일 때:
+  - /api/image/generate 응답에 "url" 포함 여부 확인
+  - /media/xxx.png 요청이 200인지 확인
+  - 백엔드 /media 마운트가 올바른지(backend/app/main.py)와 저장 경로 일치 여부(images.py)를 확인
+
+테스트
+```powershell
+$body = '{"name":"이빛나","gender":"여","feature":"귀여운 이미지","options":["안경"]}'
+Invoke-RestMethod -Uri http://localhost:8000/api/image/generate -Method POST -Headers @{'Content-Type'='application/json'} -Body $body | ConvertTo-Json -Depth 3
+```
+
+PR/커밋 규칙(예시)
+- 브랜치: docs/readme-stack-setup
+- 커밋 메시지: "docs: AI/Backend/Frontend 설치·실행 가이드 및 /media 서빙 문서화"
+- PR 제목: "Docs: 모노레포 운영 가이드 정리(AI/BE/FE)"
+- PR 본문: 변경 요약, 실행 방법, 검증 방법, 호환성 메모, 스크린샷(선택)
+
+라이선스
+- 프로젝트 내 표기된 라이선스를 따릅니다.
 
 ```
 selfstar/

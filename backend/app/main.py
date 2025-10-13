@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
@@ -73,6 +74,20 @@ try:
     logger.info("api_router registered from app.api.routes")
 except Exception as e:
     logger.warning(f"No api_router found in app.api.routes: {e}")
+
+# ===== Static media (/media) =====
+# 이미지 저장 경로를 앱 폴더 내부 media/로 설정 (환경변수 MEDIA_ROOT로 오버라이드 가능)
+MEDIA_ROOT = os.getenv("MEDIA_ROOT") or os.path.join(os.path.dirname(__file__), "media")
+try:
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
+except Exception as _e:
+    logger.error(f"Failed to create media directory {MEDIA_ROOT}: {_e}")
+
+try:
+    app.mount("/media", StaticFiles(directory=MEDIA_ROOT), name="media")
+    logger.info(f"Mounted static media at /media -> {MEDIA_ROOT}")
+except Exception as _e:
+    logger.error(f"Failed to mount /media: {_e}")
 
 # ===== Health =====
 @app.get("/")
