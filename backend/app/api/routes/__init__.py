@@ -13,3 +13,9 @@ try:
     router.include_router(posts_router, tags=["posts"])
 except Exception:
     pass
+
+try:
+    from .images import router as images_router
+    router.include_router(images_router)
+except Exception:
+    pass

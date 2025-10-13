@@ -29,8 +29,6 @@ backend/
 ```
 
 ## 요구 사항
-- Python 3.12+ 권장
-- MySQL 접근 가능 환경 (프로젝트 DB 또는 로컬)
 
 ## 설치 (Windows PowerShell 기준)
 프로젝트 루트는 `backend/` 입니다.
@@ -46,6 +44,48 @@ python -m pip install --upgrade pip
 ```powershell
 pip install -r requirements.txt
 ```
+Backend (FastAPI)
+
+역할
+- 인증(Kakao 등)과 세션 관리
+- 이미지 생성 요청을 AI 서버로 위임 → data URI 수신 후 파일 저장(/media)
+- 프론트 개발 서버 프록시 대상(/auth, /api, /media)
+
+필수 요구사항
+- Python 3.12+
+
+설치
+```powershell
+cd backend
+python -m venv .venv
+. .venv/Scripts/Activate.ps1
+pip install -r requirements.txt
+```
+
+환경 변수(예시)
+```powershell
+$env:AI_SERVICE_URL = "http://localhost:8600"
+$env:BACKEND_URL    = "http://localhost:8000"
+$env:FRONTEND_URL   = "http://localhost:5174"
+$env:SESSION_SECRET = "selfstar-secret"
+# 선택: $env:MEDIA_ROOT = "C:\\path\\to\\media"  # 기본: backend/app/media
+```
+
+실행
+```powershell
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Health: http://localhost:8000/health
+```
+
+주요 라우트
+- GET /health
+- POST /api/image/generate → { ok, image: dataURI, url?: /media/xxx.png }
+	- AI로 위임 성공 시 data URI를 디코드해 파일 저장 후 url도 함께 반환
+- 정적 /media → 이미지 파일 제공
+
+참고
+- `app/main.py`에서 /media를 StaticFiles로 마운트합니다.
+- `app/api/routes/images.py`에서 저장 경로와 URL을 동기화했습니다.
 
 참고: 현재 코드에서 aiomysql/SQLAlchemy를 사용합니다. 만약 실행 시 해당 모듈이 없다는 에러가 나면 아래로 설치 후, 필요 시 `requirements.txt`에 반영하세요.
 ```powershell
@@ -68,6 +108,10 @@ STRICT_CORS=0                 # 1이면 FRONTEND_URL만 허용, 기본은 * 허�
 SESSION_SECRET=change-me
 SESSION_COOKIE_NAME=sid       # 옵션
 
+# AI 서비스 (선택)
+# 별도의 AI FastAPI를 8600 포트로 띄운 경우, 백엔드가 이 URL로 위임합니다.
+AI_SERVICE_URL=http://localhost:8600
+
 # DB (프로젝트 DB 예시 값)
 DB_HOST=project-db-cgi.smhrd.com
 DB_PORT=3307
@@ -80,6 +124,11 @@ KAKAO_CLIENT_ID=YOUR_REST_API_KEY
 KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
 KAKAO_SCOPE=profile_nickname,profile_image  # 이메일 요청 제거(계정 이메일 제외)
 KAKAO_ADMIN_KEY=YOUR_ADMIN_KEY
+
+# 구글 OAuth (선택)
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET
+GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 ```
 
 ## 실행 (개발 모드)
@@ -108,8 +157,13 @@ python -m app
 	- `GET /auth/me` → 세션 기반 사용자 정보
 	- `POST /auth/logout` → 로그아웃(세션 clear)
 	- `POST /auth/kakao/unlink` → 카카오 연결 해제(관리자 키 필요)
-- Posts(예시)
 	- `GET /` (posts 라우터 기준) → posts 라우트 작동 확인
+
+### 이미지 생성 위임 API
+- `POST /api/image/generate`
+  - 요청: `{ name, gender, feature?, options[] }`
+  - 동작: `.env`의 `AI_SERVICE_URL`이 설정되면 AI 서버의 `/predict`로 위임하여 data URL을 반환합니다.
+  - 미설정/장애 시: 로컬 SVG data URL을 생성하여 반환하는 안전한 폴백을 수행합니다.
 
 주의: `/health` 엔드포인트는 현재 기본 앱에 포함되어 있지 않습니다. 필요하면 `app/main.py`에 간단히 추가하세요.
 → 현재 저장소에는 `/health`가 구현되어 있어 테스트가 통과합니다.

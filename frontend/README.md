@@ -1,6 +1,26 @@
-## Frontend
+Frontend (React + Vite)
 
-### 개요
+역할
+- 이미지 생성 UI 및 결과 표시
+- 개발 중에는 Vite dev server(5174)로 동작하며 /auth, /api, /media는 백엔드(8000)로 프록시됨
+
+필수 요구사항
+- Node.js 18+
+
+설치/실행
+```powershell
+cd frontend
+npm ci
+npm run dev
+# http://localhost:5174
+```
+
+프록시 설정
+- `vite.config.js`에 /auth, /api, /media → `http://localhost:8000` 프록시가 잡혀 있습니다.
+
+이미지 표시 로직
+- 백엔드가 반환하는 `url`이 있으면 우선 사용: `<img src="/media/xxx.png" />`
+- 없을 때는 data URI를 fallback으로 사용
 이 디렉토리는 FastAPI 백엔드(`/backend`)와 통신하는 React(Vite) 기반 프론트엔드입니다. 초기 버전은 백엔드 헬스 체크(`/health`) 호출 예제를 포함합니다.
 
 ### 구조

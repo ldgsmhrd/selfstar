@@ -112,6 +112,53 @@ function Home() {
   const toggle = (opt) =>
     setSelected((prev) => (prev.includes(opt) ? prev.filter((x) => x !== opt) : [...prev, opt]));
 
+  const [generated, setGenerated] = useState(null);
+  const [generatedUrl, setGeneratedUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState("");
+
+  const onGenerate = async () => {
+    setGenerated(null);
+  setError(null);
+  setGeneratedUrl("");
+    setStatus("");
+    setLoading(true);
+    const payload = { name, gender, feature, options: selected };
+    const MAX_RETRY = 2;
+    for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
+      try {
+        setStatus(attempt === 1 ? "생성중…" : `다시 시도중… (${attempt}/${MAX_RETRY})`);
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 60_000);
+        const res = await fetch(`${API}/api/image/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data?.ok) throw new Error(data?.message || "generation failed");
+  setGenerated(data.image);
+  if (data.url) setGeneratedUrl(data.url);
+        setStatus("");
+        break;
+      } catch (e) {
+        if (attempt === MAX_RETRY) {
+          setError(`이미지 생성 실패: ${e?.name === "AbortError" ? "요청 시간 초과" : (e?.message || e)}`);
+          setStatus("에러");
+        } else {
+          setStatus(`에러, 다시 시도중… (${attempt + 1}/${MAX_RETRY})`);
+          await new Promise((r) => setTimeout(r, 1200));
+        }
+      }
+    }
+    setLoading(false);
+  };
+
   return (
     <>
       <main className="mx-auto max-w-6xl px-6 py-20">
@@ -119,8 +166,16 @@ function Home() {
           {/* 좌측 미리보기 카드 */}
           <section className="card overflow-hidden">
             <div className="bg-black flex items-center justify-center">
-              <div className="relative w-[520px] h-[520px]">
-                <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_10%_0%,rgba(255,255,255,0.12),transparent_60%)] pointer-events-none" />
+              <div className="relative w-[520px] h-[520px]" aria-busy={loading} aria-live="polite">
+                {loading ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-blue-200">
+                    <span className="animate-pulse">{status || "생성중…"}</span>
+                  </div>
+                ) : (generatedUrl || generated) ? (
+                  <img src={generatedUrl || generated} alt="generated" className="absolute inset-0 w-full h-full object-contain"/>
+                ) : (
+                  <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_10%_0%,rgba(255,255,255,0.12),transparent_60%)] pointer-events-none" />
+                )}
               </div>
             </div>
             <div className="p-5 bg-blue-50">
@@ -195,10 +250,13 @@ function Home() {
             </div>
 
             <div className="flex justify-end mt-20 mr-1">
-              <button className="btn-primary" onClick={() => alert("인플루언서 생성 준비중입니다.")}>
-                인플루언서 생성
+              <button className={`btn-primary ${loading ? "opacity-60 cursor-not-allowed" : ""}`} onClick={onGenerate} disabled={loading}>
+                {loading ? "생성중…" : "이미지 생성"}
               </button>
             </div>
+            {error && (
+              <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>
+            )}
           </section>
         </div>
 
