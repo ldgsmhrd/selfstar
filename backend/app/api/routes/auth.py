@@ -23,6 +23,7 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5174")
 KAKAO_SCOPE = os.getenv("KAKAO_SCOPE", "profile_nickname,profile_image")  # 기본값에서 이메일 요청 제거
 KAKAO_ADMIN_KEY = os.getenv("KAKAO_ADMIN_KEY")
+GOOGLE_SCOPE = os.getenv("GOOGLE_SCOPE", "openid email profile")
 
 
 # ----- Me -----
@@ -182,3 +183,81 @@ async def kakao_unlink(request: Request):
     # 세션 정리(선택)
     request.session.clear()
     return {"ok": True, "unlinked": True}
+
+
+# ----- Google Login -----
+@router.get("/google/login")
+async def google_login():
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
+
+    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_URL}/auth/google/callback")
+
+    params = {
+        "response_type": "code",
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "scope": GOOGLE_SCOPE,
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": "consent",
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    return RedirectResponse(url)
+
+
+# 과거 프론트에서 /auth/google 로 접근하는 호환 경로 지원
+@router.get("/google")
+async def google_login_alias():
+    return await google_login()
+
+
+# ----- Google Callback -----
+@router.get("/google/callback")
+async def google_callback(request: Request):
+    code = request.query_params.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code missing")
+
+    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_URL}/auth/google/callback")
+
+    token_url = "https://oauth2.googleapis.com/token"
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "code": code,
+    }
+
+    async with httpx.AsyncClient() as client:
+        token_resp = await client.post(token_url, data=token_payload, headers={"Accept": "application/json"})
+        if token_resp.status_code != 200:
+            logger.error("Google token error [%s]: %s", token_resp.status_code, token_resp.text)
+            raise HTTPException(status_code=400, detail="Failed to retrieve Google token")
+
+        access_token = token_resp.json().get("access_token")
+        if not access_token:
+            raise HTTPException(status_code=400, detail="Access token missing")
+
+        # User info
+        userinfo_resp = await client.get(
+            "https://openidconnect.googleapis.com/v1/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        if userinfo_resp.status_code != 200:
+            logger.error("Google userinfo error [%s]: %s", userinfo_resp.status_code, userinfo_resp.text)
+            raise HTTPException(status_code=400, detail="Failed to retrieve Google user info")
+
+        info = userinfo_resp.json()
+        sub = str(info.get("sub"))
+        name = info.get("name") or info.get("given_name") or info.get("email")
+        picture = info.get("picture")
+
+    user_row = await upsert_user_from_oauth(provider="google", inherent=sub, nick=name, img=picture)
+    request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
+
+    return RedirectResponse(url=f"{FRONTEND_URL}/?login=success")
