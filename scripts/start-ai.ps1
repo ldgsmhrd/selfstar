@@ -18,7 +18,15 @@ try {
     else { throw 'Python not found. Install Python 3.10+ and ensure it is on PATH.' }
   }
   & $pythonExe -m pip install --upgrade pip setuptools wheel
-  if (Test-Path 'requirements.txt') {
+  # Optional dependency: google-genai only if API key is present
+  if ($env:GOOGLE_API_KEY) {
+    try { & $pythonExe -c "import google.genai" 2>$null } catch { }
+    if ($LASTEXITCODE -ne 0) { & $pythonExe -m pip install google-genai }
+  }
+  if (Test-Path 'requirements-serving.txt') {
+    Write-Host '[ai] installing requirements-serving (lightweight)'
+    & $pythonExe -m pip install -r 'requirements-serving.txt'
+  } elseif (Test-Path 'requirements.txt') {
     Write-Host '[ai] installing requirements'
     & $pythonExe -m pip install -r 'requirements.txt'
   } elseif (Test-Path 'requirements-ml.txt') {
@@ -27,7 +35,9 @@ try {
   }
   Stop-ProcessOnPort -Port $Port
   Write-Host "[ai] starting uvicorn on port $Port"
-  & $pythonExe -m uvicorn serving.fastapi_app.main:app --host 0.0.0.0 --port $Port
+  # Ensure 'ai' package is importable when launched from the ai folder
+  $env:PYTHONPATH = $repoRoot
+  & $pythonExe -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port $Port
 }
 finally {
   Pop-Location

@@ -1,3 +1,9 @@
+"""
+[파트 개요] AI 서빙 엔트리
+- 프론트 통신: 직접 없음, /health, /predict 제공
+- 백엔드 통신: 백엔드(images 라우터)로부터 /predict 요청을 위임받아 처리
+- 외부 통신: 선택적으로 Gemini(google-genai)를 통해 이미지 생성 호출
+"""
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -26,7 +32,7 @@ logging.basicConfig(level=logging.INFO)
 #      setx AI_MODEL_FUNC "generate_image"
 #    재기동 후 /predict 호출 시 Gemini가 이미지 생성
 
-# Load .env from repo root (../../.. from this file)
+# 리포지토리 루트의 .env 로드(이 파일 기준 ../../..)
 _ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.env"))
 try:
     load_dotenv(dotenv_path=_ENV_PATH, override=False)
@@ -38,8 +44,6 @@ except Exception as _e:
 def health():
     return {"status": "ok", "service": "ai-serving"}
 
-# Run dev server example (from repo root):
-#   python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
 
 
 class PredictRequest(BaseModel):
@@ -50,18 +54,34 @@ class PredictRequest(BaseModel):
 
 
 def _dynamic_model():
-    """환경변수로 지정된 모델을 동적으로 임포트하여 함수 핸들을 반환합니다."""
-    module_name = os.getenv("AI_MODEL_MODULE", "ai.models.imagemodel_gemini")
+
+    env_module = os.getenv("AI_MODEL_MODULE")
     func_name = os.getenv("AI_MODEL_FUNC", "generate_image")
-    try:
-        mod = importlib.import_module(module_name)
-        fn = getattr(mod, func_name)
-        if callable(fn):
-            log.info(f"Loaded model function: {module_name}.{func_name}")
-            return fn
-        log.warning(f"Function not callable: {module_name}.{func_name}")
-    except Exception as e:
-        log.warning(f"Dynamic model import failed: {e}")
+
+    candidates = []
+    if env_module:
+        candidates.append(env_module)
+    # ai. 로 시작하면 접두어를 제거한 변형도 시도
+        if env_module.startswith("ai."):
+            candidates.append(env_module[len("ai."):])
+        else:
+            candidates.append("ai." + env_module)
+    else:
+        candidates.extend([
+            "ai.models.imagemodel_gemini",
+            "models.imagemodel_gemini",
+        ])
+
+    for module_name in candidates:
+        try:
+            mod = importlib.import_module(module_name)
+            fn = getattr(mod, func_name)
+            if callable(fn):
+                log.info(f"Loaded model function: {module_name}.{func_name}")
+                return fn
+            log.warning(f"Function not callable: {module_name}.{func_name}")
+        except Exception as e:
+            log.warning(f"Dynamic model import failed for {module_name}: {e}")
     return None
 
 
@@ -71,10 +91,10 @@ MODEL_FN = _dynamic_model()
 @app.post("/predict")
 def predict(req: PredictRequest):
     try:
-        # If Pillow is missing, respond with a minimal placeholder image instead of 500
+    # Pillow 미설치 시 500 대신 최소한의 placeholder 이미지를 반환
         if Image is None:
             log.warning("Pillow not installed; returning placeholder image. Install ai/requirements.txt to enable text rendering.")
-            # 1x1 transparent PNG
+            # 1x1 투명 PNG
             tiny_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
             return {"ok": True, "image": f"data:image/png;base64,{tiny_png_b64}"}
 
@@ -97,15 +117,15 @@ def predict(req: PredictRequest):
         img = Image.new("RGB", (640, 640), (15, 23, 42))
         draw = ImageDraw.Draw(img)
 
-        # Robust font loader: prefer a Unicode-capable font (Korean supported) on Windows
+    # 견고한 폰트 로더: Windows에서 한글을 지원하는 유니코드 폰트를 우선 시도
         def load_font(size: int = 24):
             candidates = [
-                # Common Windows fonts (Korean)
+                # Windows의 한글 폰트 후보
                 "C:/Windows/Fonts/malgun.ttf",  # Malgun Gothic
                 "C:/Windows/Fonts/malgunbd.ttf",
-                # Arial Unicode MS (if available)
+                # Arial Unicode MS (있다면)
                 "C:/Windows/Fonts/arialuni.ttf",
-                # Fallback to Arial
+                # 최종 백업: Arial
                 "C:/Windows/Fonts/arial.ttf",
                 "arial.ttf",
             ]
@@ -114,17 +134,17 @@ def predict(req: PredictRequest):
                     return ImageFont.truetype(path, size)
                 except Exception:
                     continue
-            # Final fallback: default bitmap font (ASCII). We'll sanitize text if needed.
+            # 마지막 수단: 기본 비트맵 폰트(ASCII). 필요 시 텍스트 정제.
             return ImageFont.load_default()
 
         font = load_font(24)
 
-        # Safely draw text that may contain non-ASCII characters even with limited fonts
+    # 제한적인 폰트 환경에서도 비-ASCII 문자가 포함될 수 있는 텍스트를 안전하게 그리기
         def safe_text(xy, text: str, fill, font):
             try:
                 draw.text(xy, text, fill=fill, font=font)
             except Exception:
-                # As a last resort, strip non-ASCII to avoid crashes
+                # 최후의 수단: 충돌 방지를 위해 비-ASCII 제거
                 ascii_text = text.encode("ascii", "ignore").decode("ascii")
                 draw.text(xy, ascii_text, fill=fill, font=font)
 

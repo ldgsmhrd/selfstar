@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 
-# Load .env from backend root and app folder (backend/app)
+# .env 파일 로드: 백엔드 루트(backed/app 상위)와 app 폴더의 .env를 순서대로 읽습니다.
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"), override=True)
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
 

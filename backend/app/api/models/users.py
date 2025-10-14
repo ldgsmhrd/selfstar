@@ -1,3 +1,8 @@
+"""
+[파트 개요] 사용자 모델 접근 계층
+- 내부 통신: aiomysql 풀을 이용해 사용자 조회/생성/업서트
+- 외부 통신: 없음(직접 외부 API 호출 없음), DB 서버와의 통신만 수행
+"""
 # app/api/models/users.py
 from __future__ import annotations
 from typing import Optional, Dict, Any, Tuple

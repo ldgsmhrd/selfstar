@@ -1,3 +1,9 @@
+"""
+[파트 개요] API 메인: 라우터 조립
+- 프론트 통신: /, /__routes 등 상태 확인 및 프론트 호출 대상 경로 제공
+- 외부 통신: auth 라우터가 Kakao/Google/Naver OAuth 플로우 엔드포인트 제공
+- AI 통신: images 라우터가 AI 서버와 통신해 이미지 생성 위임
+"""
 # app/main.py
 # 1) .env를 어떤 import보다 먼저 로드
 from dotenv import load_dotenv
@@ -29,7 +35,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+ 
 # ----- Session -----
 # 프록시 없이 5174 -> 8000으로 직접 호출한다면 SameSite=None 필요(로컬은 http라 https_only=False)
 # Vite 프록시로 같은 오리진처럼 호출하면 아래 두 옵션은 주석으로 두세요.
