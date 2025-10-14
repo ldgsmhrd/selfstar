@@ -1,4 +1,9 @@
-# FastAPI Auth Router
+"""
+[파트 개요] 인증(OAuth) 라우터
+- 프론트 통신: /auth/* 엔드포인트로 로그인/콜백/세션 관리
+- 외부 통신: Kakao/Google/Naver OAuth 서버와 토큰 교환 및 사용자 정보 조회
+"""
+# FastAPI 인증 라우터
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
 import httpx
@@ -18,7 +23,7 @@ logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# ----- Env (base values) -----
+# ----- 환경 변수(기본값 포함) -----
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5174")
 KAKAO_SCOPE = os.getenv("KAKAO_SCOPE", "profile_nickname,profile_image")  # 기본값에서 이메일 요청 제거
@@ -26,7 +31,7 @@ KAKAO_ADMIN_KEY = os.getenv("KAKAO_ADMIN_KEY")
 GOOGLE_SCOPE = os.getenv("GOOGLE_SCOPE", "openid email profile")
 
 
-# ----- Me -----
+# ----- Me (세션 기반 본인 확인) -----
 @router.get("/me")
 async def me(request: Request):
     user_id = request.session.get("user_id")
@@ -52,15 +57,15 @@ async def me(request: Request):
     }
 
 
-# ----- Kakao Login -----
+# ----- 카카오 로그인 -----
 @router.get("/kakao/login")
 async def kakao_login():
-    # Read dynamically to avoid stale import-time env
+    # import 시점의 환경 값이 낡지 않도록 동적으로 읽기
     KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
     KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", f"{BACKEND_URL}/auth/kakao/callback")
     if not KAKAO_CLIENT_ID:
         raise HTTPException(status_code=500, detail="KAKAO_CLIENT_ID not configured")
-    # Build URL with prompt=login to always show login, and optional scope
+    # 항상 로그인 화면을 보여주고(scope 선택 가능)자 하는 URL 구성
     params = {
         "response_type": "code",
         "client_id": KAKAO_CLIENT_ID,
@@ -85,7 +90,7 @@ async def kakao_login_alias():
     return await kakao_login()
 
 
-# ----- Kakao Callback -----
+# ----- 카카오 콜백 -----
 @router.get("/kakao/callback")
 async def kakao_callback(request: Request):
     code = request.query_params.get("code")
@@ -94,7 +99,7 @@ async def kakao_callback(request: Request):
 
     # 1) 토큰 교환
     token_url = "https://kauth.kakao.com/oauth/token"
-    # Read dynamically
+    # 동적으로 다시 읽기
     KAKAO_CLIENT_ID = os.getenv("KAKAO_CLIENT_ID")
     KAKAO_REDIRECT_URI = os.getenv("KAKAO_REDIRECT_URI", f"{BACKEND_URL}/auth/kakao/callback")
     KAKAO_CLIENT_SECRET = os.getenv("KAKAO_CLIENT_SECRET")
@@ -144,14 +149,14 @@ async def kakao_callback(request: Request):
     return RedirectResponse(url=f"{FRONTEND_URL}/?login=success")
 
 
-# ----- Logout -----
+# ----- 로그아웃 -----
 @router.post("/logout")
 async def logout(request: Request):
     request.session.clear()
     return JSONResponse({"ok": True})
 
 
-# ----- Kakao Unlink (관리자키 필요) -----
+# ----- 카카오 연결 해제(관리자키 필요) -----
 @router.post("/kakao/unlink")
 async def kakao_unlink(request: Request):
     user_id = request.session.get("user_id")
@@ -166,7 +171,7 @@ async def kakao_unlink(request: Request):
     if not user or user.get("user_platform") != "kakao":
         raise HTTPException(status_code=400, detail="Not a Kakao-linked user")
 
-    inherent = user.get("user_inherent")  # Kakao user id
+    inherent = user.get("user_inherent")  # 카카오 고유 사용자 ID
     if not inherent:
         raise HTTPException(status_code=400, detail="Kakao user id missing")
 
@@ -185,7 +190,7 @@ async def kakao_unlink(request: Request):
     return {"ok": True, "unlinked": True}
 
 
-# ----- Google Login -----
+# ----- 구글 로그인 -----
 @router.get("/google/login")
 async def google_login():
     GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -213,7 +218,7 @@ async def google_login_alias():
     return await google_login()
 
 
-# ----- Google Callback -----
+# ----- 구글 콜백 -----
 @router.get("/google/callback")
 async def google_callback(request: Request):
     code = request.query_params.get("code")
@@ -243,7 +248,7 @@ async def google_callback(request: Request):
         if not access_token:
             raise HTTPException(status_code=400, detail="Access token missing")
 
-        # User info
+    # 사용자 정보 조회
         userinfo_resp = await client.get(
             "https://openidconnect.googleapis.com/v1/userinfo",
             headers={"Authorization": f"Bearer {access_token}"},

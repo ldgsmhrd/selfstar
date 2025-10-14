@@ -1,3 +1,8 @@
+"""
+[파트 개요] MySQL 연결 풀 헬퍼
+- 내부 통신: aiomysql 풀을 생성하여 DB 접근에 사용
+- 외부 통신: MySQL 서버(project-db-cgi.smhrd.com:3307)와 연결
+"""
 import aiomysql
 import os
 

@@ -1,3 +1,8 @@
+"""
+[파트 개요] 이미지 생성 라우터
+- 프론트 통신: /api/image/generate 엔드포인트 제공
+- AI 통신: AI 서비스(/predict)에 요청 위임 후 data URI 수신 → media 파일로 저장
+"""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
@@ -23,14 +28,14 @@ class GenerateImageRequest(BaseModel):
 @router.post("/image/generate")
 async def generate_image(payload: GenerateImageRequest):
   """
-  Generate image by delegating to AI service. If strict mode is enabled
-  (default), do NOT fallback to local SVG and return error instead.
+  AI 서비스에 위임하여 이미지를 생성합니다. 엄격 모드(기본값)에서는
+  로컬 SVG 대체를 사용하지 않고 오류를 반환합니다.
   """
-  # Strict mode (default True): backend will NOT fallback to SVG and will return
-  # error if AI is unavailable or fails. Reuses the same flag as AI server.
+  # 엄격 모드(기본 True): AI 가용성 문제나 실패 시 SVG 대체 없이 오류를 반환합니다.
+  # AI 서버와 동일한 플래그를 재사용합니다.
   strict = os.getenv("AI_REQUIRE_MODEL", "true").lower() in {"1", "true", "yes", "y"}
 
-  # If AI service URL is configured, delegate to it
+  # AI 서비스 URL이 설정된 경우 해당 서비스로 위임합니다.
   ai_url = os.getenv("AI_SERVICE_URL")
   if ai_url:
     try:
@@ -41,7 +46,7 @@ async def generate_image(payload: GenerateImageRequest):
       if r.status_code == 200:
         data = r.json()
         if data.get("ok") and data.get("image"):
-          # Save to media folder as file and return a URL for frontend
+          # media 폴더에 파일로 저장 후 프론트에 제공할 URL 반환
           data_uri = data["image"]
           try:
             if data_uri.startswith("data:") and "," in data_uri:
@@ -53,9 +58,9 @@ async def generate_image(payload: GenerateImageRequest):
                 "image/webp": ".webp",
               }.get(mime, ".bin")
               raw = base64.b64decode(b64)
-              # MEDIA_ROOT from env, fallback to app/media (same as app.main)
+              # MEDIA_ROOT 환경변수 사용, 없으면 app/media 로 저장(app.main 과 동일)
               # __file__ = .../backend/app/api/routes/images.py
-              # want: .../backend/app/media
+              # 실제 경로 목표: .../backend/app/media
               base_app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
               media_root = os.getenv("MEDIA_ROOT") or os.path.join(base_app_dir, "media")
               os.makedirs(media_root, exist_ok=True)
@@ -64,24 +69,24 @@ async def generate_image(payload: GenerateImageRequest):
               out_path = os.path.join(media_root, safe_name)
               with open(out_path, "wb") as f:
                 f.write(raw)
-              # URL path served by /media mount
+              # /media 마운트로 제공되는 URL 경로
               media_url_path = f"/media/{safe_name}"
               return {"ok": True, "image": data_uri, "url": media_url_path}
           except Exception as se:
             log.warning("failed to save media: %s", se)
-            # fallthrough to return just data URI
+            # 저장 실패 시 데이터 URI만 반환
             return {"ok": True, "image": data_uri}
         if strict:
           raise HTTPException(status_code=502, detail=f"ai_failed: {data}")
     except Exception as e:
       if strict:
         raise HTTPException(status_code=502, detail=f"ai_delegate_error: {e}")
-      # non-strict: continue to fallback
+      # 비엄격 모드: 아래 로컬 대체로 진행
 
   if strict:
     raise HTTPException(status_code=503, detail="ai_unavailable")
 
-  # Fallback: local SVG stub (only when not strict)
+  # 로컬 대체: 간단한 SVG (비엄격 모드에서만 사용)
   try:
     name = html.escape(payload.name)
     gender = html.escape(payload.gender)

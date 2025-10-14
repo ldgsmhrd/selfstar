@@ -27,5 +27,10 @@ frontend/node_modules/
 .ipynb_checkpoints/
 
 # VS Code
-.vscode/*.code-snippets
-.vscode/*.db
+.vscode/
+
+# Vite cache at repo root
+.vite/
+
+# Local backups (moved editor/cache folders)
+.backup_local/
