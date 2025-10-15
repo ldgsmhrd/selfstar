@@ -7,6 +7,7 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any, Tuple
 import aiomysql
+from datetime import date
 
 from app.api.core.mysql import get_mysql_pool
 
@@ -162,3 +163,45 @@ async def upsert_user_from_oauth(
             # is_new 플래그 첨부 (기존에 없던 사용자면 True)
             row["is_new"] = not existed
             return row
+
+
+# 사용자 생일 업데이트 — dict 반환(업데이트 후 최신 사용자 정보)
+async def update_user_birthday(user_id: int, birthday: date) -> Dict[str, Any]:
+    pool = await get_mysql_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE ss_user
+                SET user_birthday = %s
+                WHERE user_id = %s
+                """,
+                (birthday, user_id),
+            )
+            await conn.commit()
+    # 업데이트 후 최신 정보 반환
+    user = await find_user_by_id(user_id)
+    if not user:
+        raise RuntimeError("사용자 정보를 찾을 수 없습니다.")
+    return user
+
+
+# 사용자 프로필(생일+성별) 업데이트 — 단일 트랜잭션으로 처리
+async def update_user_profile(user_id: int, birthday: date, gender: str) -> Dict[str, Any]:
+    pool = await get_mysql_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE ss_user
+                SET user_birthday = %s,
+                    user_gender   = %s
+                WHERE user_id = %s
+                """,
+                (birthday, gender, user_id),
+            )
+            await conn.commit()
+    user = await find_user_by_id(user_id)
+    if not user:
+        raise RuntimeError("사용자 정보를 찾을 수 없습니다.")
+    return user

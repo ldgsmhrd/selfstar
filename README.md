@@ -19,6 +19,18 @@ SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
 - Backend: 8000
 - Frontend (Vite): 5174
 
+빠른 시작(Windows PowerShell)
+- 전체 실행: `scripts/start-all.ps1`
+- 개별 실행: `scripts/start-backend.ps1`, `scripts/start-frontend.ps1`, `scripts/start-ai.ps1`
+- 헬스 체크: `scripts/check-health.ps1`
+- 이미지 생성 테스트: `scripts/test-generate.ps1`
+
+예시
+```powershell
+& .\scripts\start-all.ps1
+# 백엔드:8000, AI:8600, 프론트:5174 동시에 기동
+```
+
 레포 구조(요약)
 ```
 ai/
@@ -28,10 +40,11 @@ ai/
 backend/
   app/main.py                    # Backend FastAPI 엔트리(8000)
   app/api/routes/images.py       # /api/image/generate -> AI에 위임 후 /media 저장
+  app/api/routes/userdata.py     # /user/me/profile, /user/me/birthday (세션 사용자 정보 업데이트)
   requirements.txt               # Backend 의존성
 frontend/
   src/page/App.jsx               # 메인 화면: 이미지 생성/표시
-  vite.config.js                 # /auth, /api, /media 프록시 → :8000
+  vite.config.js                 # /auth, /api, /media, /user 프록시 → :8000 (세션 쿠키 유지)
 ```
 
 설치 및 실행 (Windows, PowerShell)
@@ -286,6 +299,22 @@ bash start_vllm.sh
 - 백엔드/프론트엔드 모두 환경변수 예시 파일 제공 (`.env.example`)
 - 각 서비스별 README에 상세 실행법, 환경설정, 폴더 구조 예시 포함
 - AI 폴더는 추후 모델/서빙/MLflow/vLLM 등 확장 예정
+
+### 인증 · 온보딩 흐름(Consent → UserSetup)
+1) OAuth 로그인(카카오/구글/네이버) 완료 시 서버 세션에 `user_id` 저장
+2) `GET /auth/me` 응답에 `needs_consent` 노출(생일 미설정 또는 신규 가입 등)
+3) 프론트는 `/consent` → `/setup`으로 유도하여 프로필 정보 수집
+4) `UserSetup`에서 성별+생년월일을 동시 저장: `PATCH /user/me/profile`
+  - Vite 프록시 `/user` 경유로 세션 쿠키 포함 호출
+  - 성공 시 `/imgcreate`로 이동
+
+주요 엔드포인트(세션 필요)
+- `GET /auth/me` → `{ ok, authenticated, user: { id, needs_consent, ... } }`
+- `PATCH /user/me/profile` → `{ ok, user: { id, birthday, gender } }`
+- `PATCH /user/me/birthday` → `{ ok, user: { id, birthday } }` (이전 버전 호환)
+
+디버깅
+- `GET /__routes` → 등록된 경로 문자열 배열(개발용 도우미)
 
 ---
 
