@@ -2,9 +2,9 @@
 """
 [파트 개요] 인증(OAuth) 라우터
 - 프론트 통신: /auth/* 엔드포인트로 로그인/콜백/세션 관리
-- 외부 통신: Kakao/Google/Naver OAuth 서버와 토큰 교환 및 사용자 정보 조회
+- 외부 통신: Kakao/Google OAuth 서버와 토큰 교환 및 사용자 정보 조회
 """
-# FastAPI 인증 라우터
+
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import RedirectResponse, JSONResponse
 import httpx
@@ -28,9 +28,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # ----- 환경 변수(기본값 포함) -----
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5174")
-KAKAO_SCOPE = os.getenv("KAKAO_SCOPE", "profile_nickname,profile_image")  # 기본값에서 이메일 요청 제거
+KAKAO_SCOPE = os.getenv("KAKAO_SCOPE", "profile_nickname,profile_image")  # 이메일 제외
 KAKAO_ADMIN_KEY = os.getenv("KAKAO_ADMIN_KEY")
 GOOGLE_SCOPE = os.getenv("GOOGLE_SCOPE", "openid email profile")
+AUTH_ALWAYS_HOME = os.getenv("AUTH_ALWAYS_HOME", "1").lower() in ("1", "true", "yes")
 
 
 # ----- Me (세션 기반 본인 확인) -----
@@ -42,11 +43,8 @@ async def me(request: Request):
 
     user = await find_user_by_id(int(user_id))
     if not user:
-        # 세션은 있는데 DB에 없으면 세션 정리
         request.session.clear()
         return {"ok": True, "authenticated": False, "user": None}
-
-    # 프론트에서 필요한 최소 정보만 반환
 
     return {
         "ok": True,
@@ -59,14 +57,13 @@ async def me(request: Request):
         },
     }
 
-    # 3) upsert & 세션 저장
-    user_row = await upsert_user_from_oauth(
-        provider="kakao", inherent=inherent, nick=nick, img=img
-    )
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
-
-    # 4) 프론트로 리다이렉트 (로그인 완료)
-    return RedirectResponse(url=f"{FRONTEND_URL}/?login=success")
+    # Temporarily force redirect to home after auth (can disable via AUTH_ALWAYS_HOME=0)
+    if AUTH_ALWAYS_HOME:
+        return RedirectResponse(url=f"{FRONTEND_URL}/")
+    if user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
+    return RedirectResponse(url=f"{FRONTEND_URL}/")
 
 
 # ----- 로그아웃 -----
@@ -86,12 +83,11 @@ async def kakao_unlink(request: Request):
     if not KAKAO_ADMIN_KEY:
         raise HTTPException(status_code=500, detail="KAKAO_ADMIN_KEY not configured on server")
 
-    # 유저 정보 조회
     user = await find_user_by_id(int(user_id))
     if not user or user.get("user_platform") != "kakao":
         raise HTTPException(status_code=400, detail="Not a Kakao-linked user")
 
-    inherent = user.get("user_inherent")  # 카카오 고유 사용자 ID
+    inherent = user.get("user_inherent")
     if not inherent:
         raise HTTPException(status_code=400, detail="Kakao user id missing")
 
@@ -105,7 +101,6 @@ async def kakao_unlink(request: Request):
             logger.error("Kakao unlink error [%s]: %s", resp.status_code, resp.text)
             raise HTTPException(status_code=400, detail="Failed to unlink Kakao user")
 
-    # 세션 정리(선택)
     request.session.clear()
     return {"ok": True, "unlinked": True}
 
@@ -113,16 +108,15 @@ async def kakao_unlink(request: Request):
 # ----- 구글 로그인 -----
 @router.get("/google/login")
 async def google_login():
-    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-    if not GOOGLE_CLIENT_ID:
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+    if not google_client_id:
         raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
 
-    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_URL}/auth/google/callback")
-
+    google_redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_URL}/auth/google/callback")
     params = {
         "response_type": "code",
-        "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "client_id": google_client_id,
+        "redirect_uri": google_redirect_uri,
         "scope": GOOGLE_SCOPE,
         "access_type": "offline",
         "include_granted_scopes": "true",
@@ -132,7 +126,6 @@ async def google_login():
     return RedirectResponse(url)
 
 
-# 과거 프론트에서 /auth/google 로 접근하는 호환 경로 지원
 @router.get("/google")
 async def google_login_alias():
     return await google_login()
@@ -145,44 +138,54 @@ async def google_callback(request: Request):
     if not code:
         raise HTTPException(status_code=400, detail="Authorization code missing")
 
-    GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-    GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-    GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_URL}/auth/google/callback")
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+    google_redirect_uri = os.getenv("GOOGLE_REDIRECT_URI", f"{BACKEND_URL}/auth/google/callback")
 
     token_url = "https://oauth2.googleapis.com/token"
     token_payload = {
         "grant_type": "authorization_code",
-        "client_id": GOOGLE_CLIENT_ID,
-        "client_secret": GOOGLE_CLIENT_SECRET,
-        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "client_id": google_client_id,
+        "client_secret": google_client_secret,
+        "redirect_uri": google_redirect_uri,
         "code": code,
     }
 
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(token_url, data=token_payload, headers={"Accept": "application/json"})
-        if token_resp.status_code != 200:
-            logger.error("Google token error [%s]: %s", token_resp.status_code, token_resp.text)
-            raise HTTPException(status_code=400, detail="Failed to retrieve Google token")
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(token_url, data=token_payload, headers={"Accept": "application/json"})
+            if token_resp.status_code != 200:
+                logger.error("Google token error [%s]: %s", token_resp.status_code, token_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token")
+            access_token = token_resp.json().get("access_token")
+            if not access_token:
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token_missing")
 
-        access_token = token_resp.json().get("access_token")
-        if not access_token:
-            raise HTTPException(status_code=400, detail="Access token missing")
+            userinfo_resp = await client.get(
+                "https://openidconnect.googleapis.com/v1/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if userinfo_resp.status_code != 200:
+                logger.error("Google userinfo error [%s]: %s", userinfo_resp.status_code, userinfo_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_userinfo")
 
-    # 사용자 정보 조회
-        userinfo_resp = await client.get(
-            "https://openidconnect.googleapis.com/v1/userinfo",
-            headers={"Authorization": f"Bearer {access_token}"},
-        )
-        if userinfo_resp.status_code != 200:
-            logger.error("Google userinfo error [%s]: %s", userinfo_resp.status_code, userinfo_resp.text)
-            raise HTTPException(status_code=400, detail="Failed to retrieve Google user info")
+            info = userinfo_resp.json()
+            sub = str(info.get("sub"))
+            name = info.get("name") or info.get("given_name") or info.get("email")
+            picture = info.get("picture")
+    except Exception as e:
+        logger.error("Google HTTP error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=http")
 
-        info = userinfo_resp.json()
-        sub = str(info.get("sub"))
-        name = info.get("name") or info.get("given_name") or info.get("email")
-        picture = info.get("picture")
+    try:
+        user_row = await upsert_user_from_oauth(provider="google", inherent=sub, nick=name, img=picture)
+    except Exception as e:
+        logger.error("Google upsert error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
 
-    user_row = await upsert_user_from_oauth(provider="google", inherent=sub, nick=name, img=picture)
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
-
-    return RedirectResponse(url=f"{FRONTEND_URL}/?login=success")
+    if AUTH_ALWAYS_HOME:
+        return RedirectResponse(url=f"{FRONTEND_URL}/")
+    if user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
+    return RedirectResponse(url=f"{FRONTEND_URL}/")

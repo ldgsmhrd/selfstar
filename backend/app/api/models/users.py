@@ -113,7 +113,20 @@ async def upsert_user_from_oauth(
 
     pool = await get_mysql_pool()
     async with pool.acquire() as conn:
-        # upsert (중복키 전제: user_inherent 또는 (user_platform, user_inherent) UNIQUE)
+        # 1) 기존 존재 여부 확인 (간단한 구분용)
+        existed = False
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                """
+                SELECT user_id FROM ss_user
+                WHERE user_platform = %s AND user_inherent = %s
+                LIMIT 1
+                """,
+                (provider, inherent),
+            )
+            existed = await cur.fetchone() is not None
+
+        # 2) upsert (중복키 전제: user_inherent 또는 (user_platform, user_inherent) UNIQUE)
         async with conn.cursor() as cur:
             await cur.execute(
                 """
@@ -130,7 +143,7 @@ async def upsert_user_from_oauth(
             )
             await conn.commit()
 
-        # 조회는 DictCursor로
+        # 3) 조회는 DictCursor로
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute(
                 """
@@ -146,4 +159,6 @@ async def upsert_user_from_oauth(
             row = await cur.fetchone()
             if not row:
                 raise RuntimeError("upsert 이후 사용자 조회 실패")
+            # is_new 플래그 첨부 (기존에 없던 사용자면 True)
+            row["is_new"] = not existed
             return row

@@ -34,3 +34,13 @@ frontend/node_modules/
 
 # Local backups (moved editor/cache folders)
 .backup_local/
+
+# Secrets and credentials (never commit)
+ai/training/client_secrets.json
+ai/training/pydrive2_credentials.json
+
+# Training artifacts
+ai/training/training_package.zip
+
+# Generated media files
+backend/app/media/

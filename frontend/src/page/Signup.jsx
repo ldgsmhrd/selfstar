@@ -52,6 +52,8 @@ export default function AuthScreen() {
   const handleAuth = (provider) => (e) => {
     e.preventDefault();
     // 실제 OAuth 시작 엔드포인트로 이동
+    // 현재 탭 상태를 intent로 저장하여 콜백 후 홈('/')에 도착해도 의도에 따라 클라이언트에서 보정
+  try { localStorage.setItem("oauth_intent", tab); } catch { /* ignore */ }
     if (provider === "kakao") {
       window.location.href = "/auth/kakao"; // alias to /auth/kakao/login
       return;
@@ -93,13 +95,13 @@ export default function AuthScreen() {
         <div className="auth-wrap" aria-label="OAuth 인증">
           {/* 왼쪽 쇼케이스 */}
           <aside className="showcase" aria-hidden="false">
-            <span className="badge">🔒 OAuth 2.0 · Social Login</span>
+            <span className="badge">간편 로그인 및 회원가입</span>
             <h1>
-              원클릭 로그인으로
+              {tab === "signup" ? "원클릭 회원가입으로" : "원클릭 로그인으로"}
               <br />바로 시작하세요
             </h1>
             <p>
-              카카오 · 구글 · 네이버 중 편한 계정으로 로그인/가입하고,
+              카카오 · 구글 · 네이버 중 편한 계정으로 로그인/회원가입하고,
               <br />SelfStar의 모든 기능을 즉시 이용하세요.
             </p>
             <div className="mock" aria-hidden="true" />

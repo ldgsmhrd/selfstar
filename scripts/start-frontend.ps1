@@ -24,9 +24,14 @@ try {
   } else {
     Write-Host '[frontend] using existing node_modules'
   }
-  Assert-Port-Free -Port $Port
+  # If the port is already used, assume a dev server is running and exit cleanly
+  $existing = Get-PidsOnPort -Port $Port
+  if ($existing -and $existing.Count -gt 0) {
+    Write-Host "[frontend] vite is likely already running on port $Port (PIDs: $($existing -join ', ')). Skipping start."
+    return
+  }
   Write-Host "[frontend] starting vite on port $Port (strict)"
-  npm run dev -- --port $Port
+  npm run dev -- --strictPort --port $Port
 }
 finally {
   Pop-Location
