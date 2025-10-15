@@ -63,7 +63,7 @@ export default function AuthScreen() {
       return;
     }
     if (provider === "naver") {
-      alert("네이버는 준비 중입니다.");
+      window.location.href = "/auth/naver"; // alias to /auth/naver/login
       return;
     }
   };

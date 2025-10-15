@@ -1,4 +1,3 @@
-
 """
 [파트 개요] 인증(OAuth) 라우터
 - 프론트 통신: /auth/* 엔드포인트로 로그인/콜백/세션 관리
@@ -14,16 +13,15 @@ from urllib.parse import urlencode
 
 from app.api.models.users import upsert_user_from_oauth, find_user_by_id
 
-
 logger = logging.getLogger("auth")
 if not logger.handlers:
     handler = logging.StreamHandler()
     formatter = logging.Formatter("[%(levelname)s] %(asctime)s - %(name)s - %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
 
 # ----- 환경 변수(기본값 포함) -----
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
@@ -56,6 +54,87 @@ async def me(request: Request):
             "platform": user.get("user_platform"),
         },
     }
+
+
+# ----- 카카오 로그인 -----
+@router.get("/kakao/login")
+async def kakao_login():
+    kakao_client_id = os.getenv("KAKAO_CLIENT_ID")
+    kakao_redirect_uri = os.getenv("KAKAO_REDIRECT_URI", f"{BACKEND_URL}/auth/kakao/callback")
+    if not kakao_client_id:
+        raise HTTPException(status_code=500, detail="KAKAO_CLIENT_ID not configured")
+
+    params = {
+        "response_type": "code",
+        "client_id": kakao_client_id,
+        "redirect_uri": kakao_redirect_uri,
+        "prompt": "login",
+    }
+    if KAKAO_SCOPE:
+        scope_tokens = [t.strip() for t in KAKAO_SCOPE.split(",") if t.strip() and "email" not in t.strip().lower()]
+        if scope_tokens:
+            params["scope"] = ",".join(scope_tokens)
+    url = "https://kauth.kakao.com/oauth/authorize?" + urlencode(params)
+    return RedirectResponse(url)
+
+
+@router.get("/kakao")
+async def kakao_login_alias():
+    return await kakao_login()
+
+
+# ----- 카카오 콜백 -----
+@router.get("/kakao/callback")
+async def kakao_callback(request: Request):
+    code = request.query_params.get("code")
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code missing")
+
+    token_url = "https://kauth.kakao.com/oauth/token"
+    kakao_client_id = os.getenv("KAKAO_CLIENT_ID")
+    kakao_redirect_uri = os.getenv("KAKAO_REDIRECT_URI", f"{BACKEND_URL}/auth/kakao/callback")
+    kakao_client_secret = os.getenv("KAKAO_CLIENT_SECRET")
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": kakao_client_id,
+        "redirect_uri": kakao_redirect_uri,
+        "code": code,
+    }
+    if kakao_client_secret:
+        token_payload["client_secret"] = kakao_client_secret
+
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(token_url, data=token_payload)
+            if token_resp.status_code != 200:
+                logger.error("Kakao token error [%s]: %s", token_resp.status_code, token_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token")
+            access_token = token_resp.json().get("access_token")
+            if not access_token:
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token_missing")
+
+            user_resp = await client.get(
+                "https://kapi.kakao.com/v2/user/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if user_resp.status_code != 200:
+                logger.error("Kakao userinfo error [%s]: %s", user_resp.status_code, user_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_userinfo")
+
+            kakao_user = user_resp.json()
+            inherent = str(kakao_user.get("id"))
+            props = kakao_user.get("properties") or {}
+            nick = props.get("nickname")
+            img = props.get("profile_image")
+    except Exception as e:
+        logger.error("Kakao HTTP error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=http")
+
+    try:
+        user_row = await upsert_user_from_oauth(provider="kakao", inherent=inherent, nick=nick, img=img)
+    except Exception as e:
+        logger.error("Kakao upsert error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
 
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
     # Temporarily force redirect to home after auth (can disable via AUTH_ALWAYS_HOME=0)
@@ -189,3 +268,81 @@ async def google_callback(request: Request):
     if user_row.get("is_new"):
         return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     return RedirectResponse(url=f"{FRONTEND_URL}/")
+
+
+@router.get("/naver")
+async def naver_login_alias():
+    return await naver_login()
+
+
+# ----- 네이버 로그인 -----
+@router.get("/naver/login")
+async def naver_login():
+    naver_client_id = os.getenv("NAVER_CLIENT_ID")
+    naver_redirect_uri = os.getenv("NAVER_REDIRECT_URI", f"{BACKEND_URL}/auth/naver/callback")
+    if not naver_client_id:
+        raise HTTPException(status_code=500, detail="NAVER_CLIENT_ID not configured")
+    params = {
+        "response_type": "code",
+        "client_id": naver_client_id,
+        "redirect_uri": naver_redirect_uri,
+        "state": "selfstar-login",
+    }
+    url = "https://nid.naver.com/oauth2.0/authorize?" + urlencode(params)
+    return RedirectResponse(url)
+
+# ----- 네이버 콜백 -----
+@router.get("/naver/callback")
+async def naver_callback(request: Request):
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code missing")
+    naver_client_id = os.getenv("NAVER_CLIENT_ID")
+    naver_client_secret = os.getenv("NAVER_CLIENT_SECRET")
+    naver_redirect_uri = os.getenv("NAVER_REDIRECT_URI", f"{BACKEND_URL}/auth/naver/callback")
+    token_url = "https://nid.naver.com/oauth2.0/token"
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": naver_client_id,
+        "client_secret": naver_client_secret,
+        "code": code,
+        "state": state,
+        "redirect_uri": naver_redirect_uri,
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(token_url, data=token_payload)
+            if token_resp.status_code != 200:
+                logger.error("Naver token error [%s]: %s", token_resp.status_code, token_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token")
+            token_json = token_resp.json()
+            access_token = token_json.get("access_token")
+            if not access_token:
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token_missing")
+            userinfo_resp = await client.get(
+                "https://openapi.naver.com/v1/nid/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if userinfo_resp.status_code != 200:
+                logger.error("Naver userinfo error [%s]: %s", userinfo_resp.status_code, userinfo_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_userinfo")
+            info = userinfo_resp.json().get("response", {})
+            naver_id = str(info.get("id"))
+            name = info.get("name") or info.get("nickname") or info.get("email")
+            picture = info.get("profile_image")
+    except Exception as e:
+        logger.error("Naver HTTP error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=http")
+    try:
+        user_row = await upsert_user_from_oauth(provider="naver", inherent=naver_id, nick=name, img=picture)
+    except Exception as e:
+        logger.error("Naver upsert error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
+    request.session["user_id"] = int(user_row["user_id"])
+    if AUTH_ALWAYS_HOME:
+        return RedirectResponse(url=f"{FRONTEND_URL}/")
+    if user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
+    return RedirectResponse(url=f"{FRONTEND_URL}/")
+
