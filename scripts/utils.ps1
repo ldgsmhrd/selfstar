@@ -39,3 +39,30 @@ function Stop-ProcessOnPort {
         }
     }
 }
+
+# Import key=value lines from a .env file into current PowerShell process environment
+function Import-DotEnv {
+    param(
+        [Parameter(Mandatory=$true)][string]$Path
+    )
+    if (-not (Test-Path $Path)) { Write-Warning "[utils] .env not found at $Path"; return }
+    try {
+        Get-Content -Path $Path | ForEach-Object {
+            $line = $_.Trim()
+            if ([string]::IsNullOrWhiteSpace($line)) { return }
+            if ($line.StartsWith('#')) { return }
+            # skip comments with inline text; simple split on first '='
+            $idx = $line.IndexOf('=')
+            if ($idx -lt 1) { return }
+            $key = $line.Substring(0, $idx).Trim()
+            $val = $line.Substring($idx + 1).Trim()
+            # remove optional surrounding quotes
+            if ($val.StartsWith('"') -and $val.EndsWith('"')) { $val = $val.Substring(1, $val.Length-2) }
+            if ($val.StartsWith("'") -and $val.EndsWith("'")) { $val = $val.Substring(1, $val.Length-2) }
+            if ($key) { Set-Item -Path ("Env:" + $key) -Value $val }
+        }
+        Write-Host "[utils] imported .env from $Path"
+    } catch {
+        Write-Warning "[utils] failed importing .env: $_"
+    }
+}
