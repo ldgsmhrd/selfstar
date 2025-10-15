@@ -262,6 +262,7 @@ async def google_callback(request: Request):
         logger.error("Google upsert error: %s", e)
         return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
 
+
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
     if AUTH_ALWAYS_HOME:
         return RedirectResponse(url=f"{FRONTEND_URL}/")
@@ -339,10 +340,10 @@ async def naver_callback(request: Request):
     except Exception as e:
         logger.error("Naver upsert error: %s", e)
         return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
+      
     request.session["user_id"] = int(user_row["user_id"])
     if AUTH_ALWAYS_HOME:
         return RedirectResponse(url=f"{FRONTEND_URL}/")
     if user_row.get("is_new"):
         return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     return RedirectResponse(url=f"{FRONTEND_URL}/")
-

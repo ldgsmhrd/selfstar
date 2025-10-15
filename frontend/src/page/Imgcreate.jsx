@@ -8,112 +8,22 @@ function Imgcreate() {
   );
 }
 
-// App.jsx
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+
+import { useState, useMemo } from "react"; // Removed unused imports
 // Vite 기준: /src 아래 경로 import
 import guideImg from "../../img/fixed_face.png";
 import { API_BASE } from "@/api/client";
+import TypingText from "../components/TypingText";
+import Field from "../components/Field";
+import StyleTag from "../components/StyleTag";
 
-/* =============== 세션 사용자 훅 =============== */
-function useAuth() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const focusCooldownRef = useRef(0);
-
-  const refresh = useCallback(async () => {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
-
-    try {
-      setLoading(true);
-  const res = await fetch(`${API_BASE}/auth/me`, {
-        method: "GET",
-        credentials: "include",
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-        signal: ctrl.signal,
-      });
-
-      if (res.status === 401) {
-        setUser(null);
-        setError(null);
-        return;
-      }
-      if (!res.ok) {
-        setUser(null);
-        setError(`서버 오류: HTTP ${res.status}`);
-        return;
-      }
-
-      const data = await res.json();
-      setUser(data.authenticated ? data.user : null);
-      setError(null);
-    } catch (err) {
-      setUser(null);
-      setError(err?.name === "AbortError" ? "요청 시간 초과" : (err?.message || "네트워크 오류"));
-    } finally {
-      clearTimeout(timer);
-      setLoading(false);
-    }
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-  const res = await fetch(`${API_BASE}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (res.ok || res.status === 204) {
-        setUser(null);
-        setError(null);
-      } else {
-        setError(`로그아웃 실패: HTTP ${res.status}`);
-      }
-    } catch (e) {
-      setError(e?.message || "로그아웃 중 오류");
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  useEffect(() => {
-    const onFocus = () => {
-      const now = Date.now();
-      if (now - focusCooldownRef.current < 3000) return;
-      focusCooldownRef.current = now;
-      refresh();
-    };
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [refresh]);
-
-  return { user, loading, error, refresh, logout, setUser };
-}
-
-/* ========================= 공통 Field 컴포넌트 ========================= */
-function Field({ label, right, children }) {
-  return (
-    <div className="mb-4">
-      {label && (
-        <div className="mb-2 flex items-center justify-between">
-          <label className="text-sm font-semibold text-slate-800">{label}</label>
-          {right}
-        </div>
-      )}
-      {children}
-    </div>
-  );
-}
 
 /* ========================= Home (스샷 스타일) ========================= */
 function Home() {
   // 기본 필드
   const [name, setName] = useState("이빛나");
   const [gender, setGender] = useState("여");
-  const [feature, setFeature] = useState("");
+  const [age, setAge] = useState(23);
 
   // 옵션(악세사리 등) — 현재 UI 미구현이므로 선택 값만 보유
   const [selected] = useState([]);
@@ -124,8 +34,7 @@ function Home() {
     []
   );
   const [personalities, setPersonalities] = useState([]);
-  const togglePersonality = (p) =>
-    setPersonalities((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
+
 
   // 얼굴 디테일 6종 (스샷 구조)
   const [faceShape, setFaceShape] = useState(""); // 얼굴형
@@ -135,12 +44,19 @@ function Home() {
   const [nose, setNose] = useState("");           // 코
   const [lips, setLips] = useState("");           // 입
 
+  const [bodyType, setBodyType] = useState("");   // 체형
+  const [glasses, setGlasses] = useState("");      // 안경 유무
+
+
   const faceShapes = ["계란형", "둥근형", "각진형", "하트형", "긴형"];
   const skinTones  = ["밝은 17~21호", "중간 21~23호", "따뜻한 23~25호", "태닝톤", "쿨톤"];
   const hairs      = ["스트레이트", "웨이브", "단발", "장발", "포니테일", "업스타일"];
   const eyeShapes  = ["크고 또렷함", "고양이상", "강아지상", "아치형", "처진눈매"];
   const noses      = ["오똑함", "버튼", "긴코", "작은코", "직선"];
   const lipTypes   = ["도톰", "얇음", "하트", "자연", "그라데"];
+
+  const bodyTypes  = ["마름", "슬림", "보통", "통통", "근육질"];
+
 
   // 이미지 생성 상태
   const [generated, setGenerated] = useState(null);
@@ -183,13 +99,23 @@ function Home() {
       .filter(Boolean)
       .join(", ");
 
-    const featureCombined = [feature, detailSummary, personalities.length ? `성격:${personalities.join('/')}` : ""]
+
+    const featureCombined = [
+      detailSummary,
+      age ? `나이:${age}` : "",
+      bodyType ? `체형:${bodyType}` : "",
+      glasses ? `안경:${glasses}` : "",
+      personalities.length ? `성격:${personalities.join('/')}` : ""
+    ]
+
       .filter(Boolean)
       .join(" | ");
 
     const payload = {
       name,
       gender,
+      age,
+
       // keep original feature for backward compatibility
       feature: featureCombined,
       options: selected,
@@ -201,6 +127,8 @@ function Home() {
       eyes,
       nose,
       lips,
+      bodyType,
+      glasses,
       personalities,
     };
 
@@ -246,12 +174,13 @@ function Home() {
     <>
       <StyleTag />
 
-      <main className="mx-auto max-w-6xl px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+
+      <main className="mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch">
           {/* 좌측 미리보기 카드 */}
-          <section className="card overflow-hidden">
+          <section className="card overflow-hidden h-full">
             <div className="bg-black flex items-center justify-center">
-              <div className="relative w-[520px] h-[520px]" aria-busy={loading} aria-live="polite">
+              <div className="relative w-full max-w-[520px] aspect-square" aria-busy={loading} aria-live="polite">
                 {loading ? (
                   <div className="absolute inset-0 flex items-center justify-center text-blue-200">
                     <span className="animate-pulse">{status || "생성중…"}</span>
@@ -264,7 +193,7 @@ function Home() {
                     onError={(e) => {
                       // If /media URL fails (404/CORS), fall back to inline data URI
                       if (generated && e.currentTarget.src !== generated) {
-                        e.currentTarget.src = generated
+                        e.currentTarget.src = generated;
                       }
                     }}
                   />
@@ -273,29 +202,30 @@ function Home() {
                 )}
               </div>
             </div>
-            <div className="p-5 bg-blue-50">
-              <h3 className="text-2xl font-semibold mb-1 tracking-tight">
+            <div className="p-4 bg-blue-50">
+              <h3 className="text-xl md:text-2xl font-semibold mb-1 tracking-tight">
                 나만의 인플루언서를 만들어보세요.
               </h3>
-              <p className="text-sm text-slate-600">
+              <p className="text-xs md:text-sm text-slate-600">
                 얼굴 ID를 고정할 때 일상과 바뀐 다양한 결과를 얻을 수 있습니다.
               </p>
             </div>
           </section>
 
           {/* 우측 입력 카드 (스샷 레이아웃) */}
-          <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative w-[520px] text-left">
+          <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full">
             {/* 말풍선 헤더 */}
-            <div className="flex items-start gap-3 mb-5">
-              <img src={guideImg} alt="guide" className="w-11 h-11 rounded-full object-cover border" />
+            <div className="flex items-start gap-3 mb-4">
+              <img src={guideImg} alt="guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full object-cover border" />
               <div className="text-sm px-4 py-2 rounded-[14px] border border-blue-300 bg-white/70 shadow-[0_4px_12px_rgba(30,64,175,0.06)]">
-                활동하실 인물을 생성해보세요.
+                <TypingText text={"활동하실 인물을 생성해보세요."} />
               </div>
             </div>
 
-            {/* 이름/성별 2컬럼 */}
-            <div className="grid grid-cols-2 gap-6">
-              <Field label="이름">
+            {/* 인플루언서 정보 */}
+            <div className="mt-1 mb-1 text-base font-semibold">인플루언서 정보</div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="이름" compact>
                 <input
                   className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
                   value={name}
@@ -304,7 +234,7 @@ function Home() {
                 />
               </Field>
 
-              <Field label="성별">
+              <Field label="성별" compact>
                 <div className="relative">
                   <select
                     className="w-full appearance-none px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
@@ -319,10 +249,45 @@ function Home() {
               </Field>
             </div>
 
+            {/* 나이 */}
+            <div className="grid grid-cols-2 gap-4 mt-1">
+              <Field label="나이" compact>
+                <input
+                  type="number"
+                  min={20}
+                  max={80}
+                  className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                  value={age}
+                  onChange={(e) => {
+                    const v = Number(e.target.value.replace(/[^\d]/g, ""));
+                    if (Number.isNaN(v)) return setAge("");
+                    const clamped = Math.max(20, Math.min(80, v));
+                    setAge(clamped);
+                  }}
+                  placeholder="예: 23"
+                />
+              </Field>
+
+              <Field label="안경" compact>
+                <div className="relative">
+                  <select
+                    className="w-full appearance-none px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
+                    value={glasses}
+                    onChange={(e) => setGlasses(e.target.value)}
+                  >
+                    <option value="">선택</option>
+                    <option value="없음">없음</option>
+                    <option value="있음">있음</option>
+                  </select>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">▾</span>
+                </div>
+              </Field>
+            </div>
+
             {/* 얼굴 디테일 */}
-            <div className="mt-2 mb-1 text-sm font-semibold">얼굴 디테일</div>
-            <div className="grid grid-cols-2 gap-6">
-              <Field label="얼굴형">
+            <div className="mt-1 mb-1 text-base font-semibold">얼굴 디테일</div>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="얼굴형" compact>
                 <Select value={faceShape} onChange={(e) => setFaceShape(e.target.value)}>
                   {faceShapes.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -330,7 +295,7 @@ function Home() {
                 </Select>
               </Field>
 
-              <Field label="피부톤">
+              <Field label="피부톤" compact>
                 <Select value={skinTone} onChange={(e) => setSkinTone(e.target.value)}>
                   {skinTones.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -338,7 +303,7 @@ function Home() {
                 </Select>
               </Field>
 
-              <Field label="헤어">
+              <Field label="헤어" compact>
                 <Select value={hair} onChange={(e) => setHair(e.target.value)}>
                   {hairs.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -346,7 +311,7 @@ function Home() {
                 </Select>
               </Field>
 
-              <Field label="눈">
+              <Field label="눈" compact>
                 <Select value={eyes} onChange={(e) => setEyes(e.target.value)}>
                   {eyeShapes.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -354,7 +319,7 @@ function Home() {
                 </Select>
               </Field>
 
-              <Field label="코">
+              <Field label="코" compact>
                 <Select value={nose} onChange={(e) => setNose(e.target.value)}>
                   {noses.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -362,7 +327,7 @@ function Home() {
                 </Select>
               </Field>
 
-              <Field label="입">
+              <Field label="입" compact>
                 <Select value={lips} onChange={(e) => setLips(e.target.value)}>
                   {lipTypes.map((v) => (
                     <option key={v} value={v}>{v}</option>
@@ -371,17 +336,17 @@ function Home() {
               </Field>
             </div>
 
-            {/* 성격 */}
-            <div className="mt-2 mb-1 text-sm font-semibold">성격 <span className="text-slate-400">· 중복 선택</span></div>
-            <div className="flex flex-wrap gap-3 mb-4">
-              {personalityList.map((p) => {
-                const on = personalities.includes(p);
+            {/* 체형 */}
+            <div className="mt-3 mb-1 text-sm font-semibold">체형</div>
+            <div className="grid grid-cols-5 gap-2 mb-3">
+              {bodyTypes.map((p) => {
+                const on = bodyType === p;
                 return (
                   <button
                     key={p}
                     type="button"
-                    onClick={() => togglePersonality(p)}
-                    className={"chip " + (on ? "border-blue-400 bg-white text-blue-700 shadow-sm" : "")}
+                    onClick={() => setBodyType(on ? "" : p)}
+                    className={"chip " + (on ? "chip-on" : "")}
                     aria-pressed={on}
                   >
                     {p}
@@ -390,28 +355,34 @@ function Home() {
               })}
             </div>
 
-            {/* 특징 한 줄 */}
-            <div className="mb-2 text-sm font-semibold">
-              특징 <span className="text-slate-400">· 인플루언서의 특징을 작성해주세요.</span>
+            {/* 성격 */}
+            <div className="mt-2 mb-1 text-sm font-semibold">성격 <span className="text-slate-400"></span></div>
+            <div className="grid grid-cols-4 gap-2 mb-3">
+              {personalityList.map((p) => {
+                const on = personalities.includes(p);
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPersonalities(on ? [] : [p])} // single-select
+                    className={"chip " + (on ? "chip-on" : "")}
+                    aria-pressed={on}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
             </div>
-            <Field>
-              <input
-                className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 placeholder:text-blue-500/80 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                value={feature}
-                onChange={(e) => setFeature(e.target.value)}
-                placeholder="ex) 귀여운 이미지"
-              />
-            </Field>
 
             {/* 버튼 두 개 (우측 정렬) */}
-            <div className="flex justify-end gap-3 mt-6">
+            <div className="flex justify-end gap-2 mt-4">
               <button
                 className={`btn-outline ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
                 type="button"
                 onClick={onGenerate}
                 disabled={loading}
               >
-                인플루언서 생성
+                미리보기
               </button>
               <button
                 className={`btn-primary ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
@@ -430,52 +401,6 @@ function Home() {
   );
 }
 
-/* ========================= 전역 스타일(컴포넌트 안에 주입) ========================= */
-function StyleTag() {
-  return (
-    <style>{`
-      /* 카드/버튼/칩 — Tailwind 없이도 보이도록 보조 */
-      .card{
-        border-radius: 16px;
-        border: 1px solid #cfe3fb;
-        background: #0b1020;
-        box-shadow: 0 20px 40px rgba(30,64,175,.10);
-      }
-      .btn-primary{
-        white-space:nowrap;
-        padding: 10px 16px;
-        border-radius: 12px;
-        border: 1px solid transparent;
-        background: linear-gradient(180deg,#5ea3ff,#2d6cdf);
-        color: #fff;
-        font-weight: 700;
-        box-shadow: 0 14px 28px rgba(45,108,223,.22);
-      }
-      .btn-outline{
-        white-space:nowrap;
-        padding: 10px 16px;
-        border-radius: 12px;
-        border: 1px solid #cfe3fb;
-        background: #fff;
-        color: #0f1d2b;
-        font-weight: 700;
-      }
-      .chip{
-        padding: 8px 14px;
-        border-radius: 999px;
-        border: 1px solid #cfe3fb;
-        background: #f2f8ff;
-        color: #0f1d2b;
-        font-weight: 600;
-        transition: transform .06s ease, box-shadow .12s ease;
-      }
-      .chip:hover{ transform: translateY(-1px); box-shadow: 0 8px 16px rgba(45,108,223,.12); }
-    `}</style>
-  );
-}
 
-export default function App() {
-  // 인증 훅은 여기서 사용할 수 있음
-  useAuth(); // 필요 없으면 제거 가능
-  return <Home />;
-}
+export default Home;
+
