@@ -2,7 +2,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Routes, Route, NavLink, Link } from "react-router-dom";
 import Signup from "./Signup.jsx";
+import Imgcreate from "./Imgcreate.jsx";
 import Footer from "../../components/Footer.jsx";
+import ConsentPage from "./ConsentPage.jsx";
+import UserSetup from "./UserSetup.jsx";
 // import MyPage from "./MyPage.jsx";
 // import Chat from "./Chat.jsx";
 
@@ -18,7 +21,8 @@ import heroImg from "../../img/hero.png";
 import step2Img from "../../img/step2.png";
 import step3Img from "../../img/step3.png";
 
-const API = "";
+// Backend API base for auth and routes
+const API = "http://localhost:8000";
 
 /* =============== 세션 사용자 훅 =============== */
 function useAuth() {
@@ -81,7 +85,7 @@ function useAuth() {
 /* ========================= Intro (애니메이션 추가) ========================= */
 function WelcomeIntro({ onStart, startHref = "/signup" }) {
   const css = `
-    :root{ --brand:#4DA3FF; --text:#111827; --muted:#9CA3AF; --header-h:64px; }
+    :root{ --brand:#2563EB; --text:#111827; --muted:#9CA3AF; --header-h:64px; }
     .intro-wrap{
       /* 헤더를 제외한 1 화면 꽉 차게 */
       min-height:calc(100dvh - var(--header-h)); width:100%;
@@ -117,10 +121,26 @@ function WelcomeIntro({ onStart, startHref = "/signup" }) {
       opacity:0; transform:translateY(8px); animation:reveal .9s .5s cubic-bezier(.2,.7,.2,1) forwards;
     }
     .intro-start{
-      margin-top:clamp(14px,3vh,26px); font-size:clamp(18px,2.8vw,28px); font-weight:900; color:#aab0b7;
-      text-decoration:none; user-select:none; cursor:pointer;
+      margin-top:clamp(14px,3vh,26px);
+      font-size:clamp(18px,2.8vw,28px);
+      font-weight:900;
+      text-decoration:none;
+      user-select:none;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      padding:12px 22px;
+      border-radius:999px;
+      background: var(--brand);
+      color:#ffffff;
+      box-shadow:0 10px 20px rgba(37,99,235,.25);
+      transition: transform .1s ease, box-shadow .15s ease, background .15s ease;
       opacity:0; transform:translateY(8px); animation:reveal .9s 1s cubic-bezier(.2,.7,.2,1) forwards;
     }
+    .intro-start:hover{ transform:translateY(-1px); box-shadow:0 14px 26px rgba(37,99,235,.28); }
+    .intro-start:active{ transform:translateY(0); box-shadow:0 8px 16px rgba(37,99,235,.22); }
+    .intro-start:focus-visible{ outline:none; box-shadow:0 0 0 4px rgba(37,99,235,.25); }
     @media (prefers-reduced-motion: reduce){
       .word, .intro-sub, .intro-start { animation:none !important; opacity:1 !important; transform:none !important; filter:none !important; }
       .intro-title .brand{ animation:none !important; }
@@ -277,8 +297,9 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home onStart={undefined} />} />
           <Route path="/signup" element={<Signup />} />
-          {/* <Route path="/mypage" element={<Private user={user}><MyPage /></Private>} /> */}
-          {/* <Route path="/chat" element={<Chat />} /> */}
+          <Route path="/consent" element={<ConsentPage />} />
+          <Route path="/setup" element={<UserSetup />} />
+          <Route path="/imgcreate" element={<Imgcreate />} />
           <Route path="/alerts" element={<Alerts />} />
         </Routes>
       </main>
@@ -290,8 +311,15 @@ export default function App() {
 
 /* ========================= 보호 라우트 ========================= */
 function Private({ user, children }) {
-  if (!user) return <div className="mx-auto max-w-4xl px-6 py-12 text-slate-500">로그인이 필요합니다.</div>;
-  return children;
+  return (
+    <>
+      {!user ? (
+        <div className="mx-auto max-w-4xl px-6 py-12 text-slate-500">로그인이 필요합니다.</div>
+      ) : (
+        children
+      )}
+    </>
+  );
 }
 
 /* ========================= 단순 알림 페이지 ========================= */

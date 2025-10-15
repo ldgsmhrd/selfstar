@@ -4,7 +4,8 @@
 - 백엔드 통신: 백엔드(images 라우터)로부터 /predict 요청을 위임받아 처리
 - 외부 통신: 선택적으로 Gemini(google-genai)를 통해 이미지 생성 호출
 """
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional
 import base64
@@ -14,6 +15,7 @@ import traceback
 import importlib
 import os
 from dotenv import load_dotenv
+import sys
 
 try:
     from PIL import Image, ImageDraw, ImageFont
@@ -33,10 +35,15 @@ logging.basicConfig(level=logging.INFO)
 #    재기동 후 /predict 호출 시 Gemini가 이미지 생성
 
 # 리포지토리 루트의 .env 로드(이 파일 기준 ../../..)
-_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.env"))
+_APP_DIR = os.path.dirname(__file__)
+_REPO_ROOT = os.path.abspath(os.path.join(_APP_DIR, "..", "..", ".."))
+# Ensure repository root is importable (for ai.models.*)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+_ENV_PATH = os.path.join(_REPO_ROOT, ".env")
 try:
-    load_dotenv(dotenv_path=_ENV_PATH, override=False)
-    log.info(f"Loaded .env from {_ENV_PATH}")
+    load_dotenv(dotenv_path=_ENV_PATH, override=True)
+    log.info(f"[ai] Loaded repo .env from {_ENV_PATH}")
 except Exception as _e:
     log.warning(f".env load failed: {_e}")
 
@@ -49,8 +56,17 @@ def health():
 class PredictRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     gender: str = Field(..., min_length=1, max_length=10)
-    feature: Optional[str] = Field(None, max_length=200)
+    feature: Optional[str] = Field(None, max_length=2000)
     options: List[str] = Field(default_factory=list)
+    # Accept same optional detailed fields as frontend/backend
+    featureCombined: Optional[str] = Field(None, max_length=2000)
+    faceShape: Optional[str] = None
+    skinTone: Optional[str] = None
+    hair: Optional[str] = None
+    eyes: Optional[str] = None
+    nose: Optional[str] = None
+    lips: Optional[str] = None
+    personalities: Optional[List[str]] = None
 
 
 def _dynamic_model():
@@ -87,78 +103,94 @@ def _dynamic_model():
 
 MODEL_FN = _dynamic_model()
 
+# Require model by default (previous strict behavior)
+os.environ.setdefault("AI_REQUIRE_MODEL", "1")
+
 
 @app.post("/predict")
-def predict(req: PredictRequest):
+async def predict(req: PredictRequest):
     try:
-    # Pillow 미설치 시 500 대신 최소한의 placeholder 이미지를 반환
-        if Image is None:
-            log.warning("Pillow not installed; returning placeholder image. Install ai/requirements.txt to enable text rendering.")
-            # 1x1 투명 PNG
-            tiny_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-            return {"ok": True, "image": f"data:image/png;base64,{tiny_png_b64}"}
+        require_model = (os.getenv("AI_REQUIRE_MODEL", "1").strip().lower() in ("1", "true", "yes"))
+        log.info("/predict called: name=%s, gender=%s, require_model=%s", req.name, req.gender, require_model)
 
-        # 동적 모델이 있으면 우선 사용
+        # Gender normalization for downstream model
+        def _gender_std(g: str) -> str:
+            g = (g or "").strip().lower()
+            mapping = {
+                "여": "female", "여자": "female", "f": "female", "female": "female",
+                "남": "male", "남자": "male", "m": "male", "male": "male",
+            }
+            return mapping.get(g, g or "unknown")
+
+        # Build rich feature string
+        parts: list[str] = []
+        if req.feature:
+            parts.append(str(req.feature))
+        if req.featureCombined and req.featureCombined not in parts:
+            parts.append(str(req.featureCombined))
+        detail_bits: list[str] = []
+        if req.faceShape: detail_bits.append(f"얼굴형:{req.faceShape}")
+        if req.skinTone:  detail_bits.append(f"피부톤:{req.skinTone}")
+        if req.hair:      detail_bits.append(f"헤어:{req.hair}")
+        if req.eyes:      detail_bits.append(f"눈:{req.eyes}")
+        if req.nose:      detail_bits.append(f"코:{req.nose}")
+        if req.lips:      detail_bits.append(f"입:{req.lips}")
+        if detail_bits:
+            parts.append(", ".join(detail_bits))
+        if req.personalities:
+            try:
+                parts.append("성격:" + "/".join([str(p) for p in req.personalities]))
+            except Exception:
+                pass
+        feature_rich = " | ".join([p for p in parts if p]).strip()
+        if len(feature_rich) > 1800:
+            feature_rich = feature_rich[:1800]
+
+        # If model required but not loaded, error
+        if not callable(MODEL_FN):
+            msg = "model_unavailable: set GOOGLE_API_KEY and AI_MODEL_MODULE=ai.models.imagemodel_gemini"
+            log.warning(msg)
+            if require_model:
+                raise HTTPException(status_code=503, detail=msg)
+
+        # Call model if available
+        result = None
         if callable(MODEL_FN):
             try:
-                result = MODEL_FN(req.name, req.gender, req.feature, req.options)
-                if isinstance(result, Image.Image):
-                    buf = BytesIO(); result.save(buf, format="PNG")
-                    data = base64.b64encode(buf.getvalue()).decode("ascii")
-                    return {"ok": True, "image": f"data:image/png;base64,{data}"}
-                elif isinstance(result, (bytes, bytearray)):
-                    data = base64.b64encode(result).decode("ascii")
-                    return {"ok": True, "image": f"data:image/png;base64,{data}"}
-                else:
-                    log.warning("MODEL_FN returned unsupported type; falling back to built-in generator")
+                result = MODEL_FN(req.name, _gender_std(req.gender), feature_rich or (req.feature or ""), req.options or [])
             except Exception as e:
-                log.error("Model function error: %s", e)
+                log.error("Gemini model error: %s", e)
+                if require_model:
+                    raise HTTPException(status_code=503, detail=f"gemini_failed: {e}")
 
-        img = Image.new("RGB", (640, 640), (15, 23, 42))
-        draw = ImageDraw.Draw(img)
+        # Encode outputs
+        if Image is not None and isinstance(result, Image.Image):
+            buf = BytesIO(); result.save(buf, format="PNG")
+            data = base64.b64encode(buf.getvalue()).decode("ascii")
+            return {"ok": True, "image": f"data:image/png;base64,{data}"}
+        elif isinstance(result, tuple) and len(result) == 2 and isinstance(result[0], (bytes, bytearray)):
+            buf, mime = result
+            mime = mime or "image/png"
+            data = base64.b64encode(buf).decode("ascii")
+            return {"ok": True, "image": f"data:{mime};base64,{data}"}
+        elif isinstance(result, (bytes, bytearray)):
+            data = base64.b64encode(result).decode("ascii")
+            return {"ok": True, "image": f"data:image/png;base64,{data}"}
 
-    # 견고한 폰트 로더: Windows에서 한글을 지원하는 유니코드 폰트를 우선 시도
-        def load_font(size: int = 24):
-            candidates = [
-                # Windows의 한글 폰트 후보
-                "C:/Windows/Fonts/malgun.ttf",  # Malgun Gothic
-                "C:/Windows/Fonts/malgunbd.ttf",
-                # Arial Unicode MS (있다면)
-                "C:/Windows/Fonts/arialuni.ttf",
-                # 최종 백업: Arial
-                "C:/Windows/Fonts/arial.ttf",
-                "arial.ttf",
-            ]
-            for path in candidates:
-                try:
-                    return ImageFont.truetype(path, size)
-                except Exception:
-                    continue
-            # 마지막 수단: 기본 비트맵 폰트(ASCII). 필요 시 텍스트 정제.
-            return ImageFont.load_default()
-
-        font = load_font(24)
-
-    # 제한적인 폰트 환경에서도 비-ASCII 문자가 포함될 수 있는 텍스트를 안전하게 그리기
-        def safe_text(xy, text: str, fill, font):
+        # Fallback placeholder if model not required
+        if not require_model and Image is not None:
             try:
-                draw.text(xy, text, fill=fill, font=font)
-            except Exception:
-                # 최후의 수단: 충돌 방지를 위해 비-ASCII 제거
-                ascii_text = text.encode("ascii", "ignore").decode("ascii")
-                draw.text(xy, ascii_text, fill=fill, font=font)
+                img = Image.new("RGB", (768, 1024), color=(240, 242, 245))
+                draw = ImageDraw.Draw(img)
+                text = f"{req.name} / { _gender_std(req.gender) }\nPlaceholder portrait"
+                draw.text((24, 24), text, fill=(30, 30, 30))
+                buf = BytesIO(); img.save(buf, format="PNG")
+                data = base64.b64encode(buf.getvalue()).decode("ascii")
+                return {"ok": True, "image": f"data:image/png;base64,{data}"}
+            except Exception as fe:
+                log.warning("Fallback image failed: %s", fe)
 
-        y = 40
-        safe_text((32, y), "SelfStar.AI - Image Model", fill=(255,255,255), font=font); y += 40
-        safe_text((32, y), f"이름: {req.name}", fill=(200, 230, 255), font=font); y += 32
-        safe_text((32, y), f"성별: {req.gender}", fill=(200, 230, 255), font=font); y += 32
-        safe_text((32, y), f"특징: {req.feature or '-'}", fill=(200, 230, 255), font=font); y += 32
-        safe_text((32, y), f"옵션: {', '.join(req.options) or '(none)'}", fill=(200, 230, 255), font=font)
-
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        data = base64.b64encode(buf.getvalue()).decode("ascii")
-        return {"ok": True, "image": f"data:image/png;base64,{data}"}
+        raise HTTPException(status_code=503, detail="unsupported_model_output")
     except HTTPException:
         raise
     except Exception as e:
