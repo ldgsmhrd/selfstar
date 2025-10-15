@@ -10,29 +10,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import uvicorn
 import logging
-from dotenv import load_dotenv, dotenv_values
+from dotenv import load_dotenv, dotenv_values, find_dotenv
 import os
 from datetime import datetime, timezone
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.health import HealthResponse
+from urllib.parse import urlparse
 
-# .env 파일 로드 순서
-# 1) 프로젝트 루트 .env
-load_dotenv(dotenv_path=".env", override=True)
+# .env 파일 로드 순서 (항상 리포지토리 루트의 .env를 우선)
+_APP_DIR = os.path.dirname(__file__)
+_REPO_ROOT = os.path.abspath(os.path.join(_APP_DIR, "..", ".."))
+_ROOT_ENV = os.path.join(_REPO_ROOT, ".env")
+
+# 1) 리포지토리 루트 .env (최우선)
+load_dotenv(dotenv_path=_ROOT_ENV, override=True)
 # 2) app/.env (보조 또는 덮어쓰기)
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+load_dotenv(dotenv_path=os.path.join(_APP_DIR, ".env"), override=True)
 
 # 로깅 초기화
 logger = get_logger("env_loader")
 
 # (디버그) 프로젝트 루트의 .env 파일 경로와 내용을 로그로 출력
-logger.info("프로젝트 루트 .env 파일을 불러오는 중…")
+logger.info("리포지토리 루트 .env 파일을 불러오는 중…")
 try:
-    with open(".env", "r", encoding="utf-8") as env_file:
-        logger.info(".env 파일 내용:\n" + env_file.read())
+    with open(_ROOT_ENV, "r", encoding="utf-8") as env_file:
+        logger.info("루트 .env 파일 내용:\n" + env_file.read())
 except FileNotFoundError:
-    logger.error("프로젝트 루트에서 .env 파일을 찾지 못했습니다.")
+    logger.error(f"루트 .env 파일({_ROOT_ENV})을 찾지 못했습니다.")
 except UnicodeDecodeError as e:
     logger.error(f"인코딩 문제로 .env 파일을 읽지 못했습니다: {e}")
 
@@ -43,17 +48,52 @@ logger.info(f"FRONTEND_URL: {os.getenv('FRONTEND_URL')}")
 logger.info(f"SESSION_SECRET: {os.getenv('SESSION_SECRET')}")
 
 # (디버그) 루트/app의 .env 키/값 전체 로드 및 로그
-env_values_root = dotenv_values(".env")
-env_values_app = dotenv_values(os.path.join(os.path.dirname(__file__), ".env"))
+env_values_root = dotenv_values(_ROOT_ENV)
+env_values_app = dotenv_values(os.path.join(_APP_DIR, ".env"))
 logger.info(f"루트 .env 로드 값: {env_values_root}")
 logger.info(f"app/.env 로드 값: {env_values_app}")
 
 app = FastAPI(debug=True)
 
 # ===== CORS =====
+# 브라우저 쿠키(credential)를 사용하므로 절대 와일드카드(*)를 쓰지 않습니다.
+# FRONTEND_URL 을 기반으로 localhost/127.0.0.1 변형과 5173/5174 포트까지 화이트리스트에 추가합니다.
 FRONTEND_URL = settings.FRONTEND_URL
-STRICT = settings.STRICT_CORS
-allow_origins = [FRONTEND_URL, FRONTEND_URL.rstrip("/")] if STRICT else ["*"]
+
+def _origin_variants(url: str) -> list[str]:
+    try:
+        p = urlparse(url)
+        if not p.scheme or not p.netloc:
+            return []
+        host = p.hostname or "localhost"
+        port = p.port or (5174 if host in {"localhost", "127.0.0.1"} else None)
+        scheme = p.scheme
+        candidates = set()
+        def add(h: str, prt: int|None):
+            if prt:
+                base = f"{scheme}://{h}:{prt}"
+            else:
+                base = f"{scheme}://{h}"
+            candidates.add(base)
+            candidates.add(base.rstrip('/'))
+        # 입력 URL 그대로
+        add(host, port)
+        # localhost/127.0.0.1 상호 변환
+        if host == "localhost":
+            add("127.0.0.1", port)
+        if host == "127.0.0.1":
+            add("localhost", port)
+        # Vite 기본 포트 변형
+        for alt_port in (5173, 5174):
+            if port != alt_port:
+                add(host, alt_port)
+                add("127.0.0.1", alt_port)
+                add("localhost", alt_port)
+        return sorted(candidates)
+    except Exception:
+        return []
+
+allow_origins = sorted(set([FRONTEND_URL, FRONTEND_URL.rstrip("/")] + _origin_variants(FRONTEND_URL)))
 
 app.add_middleware(
     CORSMiddleware,
