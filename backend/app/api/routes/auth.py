@@ -262,7 +262,86 @@ async def google_callback(request: Request):
         logger.error("Google upsert error: %s", e)
         return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
 
+
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
+    if AUTH_ALWAYS_HOME:
+        return RedirectResponse(url=f"{FRONTEND_URL}/")
+    if user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
+    return RedirectResponse(url=f"{FRONTEND_URL}/")
+
+
+@router.get("/naver")
+async def naver_login_alias():
+    return await naver_login()
+
+
+# ----- 네이버 로그인 -----
+@router.get("/naver/login")
+async def naver_login():
+    naver_client_id = os.getenv("NAVER_CLIENT_ID")
+    naver_redirect_uri = os.getenv("NAVER_REDIRECT_URI", f"{BACKEND_URL}/auth/naver/callback")
+    if not naver_client_id:
+        raise HTTPException(status_code=500, detail="NAVER_CLIENT_ID not configured")
+    params = {
+        "response_type": "code",
+        "client_id": naver_client_id,
+        "redirect_uri": naver_redirect_uri,
+        "state": "selfstar-login",
+    }
+    url = "https://nid.naver.com/oauth2.0/authorize?" + urlencode(params)
+    return RedirectResponse(url)
+
+# ----- 네이버 콜백 -----
+@router.get("/naver/callback")
+async def naver_callback(request: Request):
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code missing")
+    naver_client_id = os.getenv("NAVER_CLIENT_ID")
+    naver_client_secret = os.getenv("NAVER_CLIENT_SECRET")
+    naver_redirect_uri = os.getenv("NAVER_REDIRECT_URI", f"{BACKEND_URL}/auth/naver/callback")
+    token_url = "https://nid.naver.com/oauth2.0/token"
+    token_payload = {
+        "grant_type": "authorization_code",
+        "client_id": naver_client_id,
+        "client_secret": naver_client_secret,
+        "code": code,
+        "state": state,
+        "redirect_uri": naver_redirect_uri,
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(token_url, data=token_payload)
+            if token_resp.status_code != 200:
+                logger.error("Naver token error [%s]: %s", token_resp.status_code, token_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token")
+            token_json = token_resp.json()
+            access_token = token_json.get("access_token")
+            if not access_token:
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_token_missing")
+            userinfo_resp = await client.get(
+                "https://openapi.naver.com/v1/nid/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if userinfo_resp.status_code != 200:
+                logger.error("Naver userinfo error [%s]: %s", userinfo_resp.status_code, userinfo_resp.text)
+                return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=oauth_userinfo")
+            info = userinfo_resp.json().get("response", {})
+            naver_id = str(info.get("id"))
+            name = info.get("name") or info.get("nickname") or info.get("email")
+            picture = info.get("profile_image")
+    except Exception as e:
+        logger.error("Naver HTTP error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=http")
+    try:
+        user_row = await upsert_user_from_oauth(provider="naver", inherent=naver_id, nick=name, img=picture)
+    except Exception as e:
+        logger.error("Naver upsert error: %s", e)
+        return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
+      
+    request.session["user_id"] = int(user_row["user_id"])
     if AUTH_ALWAYS_HOME:
         return RedirectResponse(url=f"{FRONTEND_URL}/")
     if user_row.get("is_new"):

@@ -8,7 +8,7 @@ function Imgcreate() {
   );
 }
 
-// App.jsx
+
 import { useState, useMemo } from "react"; // Removed unused imports
 // Vite 기준: /src 아래 경로 import
 import guideImg from "../../img/fixed_face.png";
@@ -16,6 +16,7 @@ import { API_BASE } from "@/api/client";
 import TypingText from "../components/TypingText";
 import Field from "../components/Field";
 import StyleTag from "../components/StyleTag";
+
 
 /* ========================= Home (스샷 스타일) ========================= */
 function Home() {
@@ -34,6 +35,7 @@ function Home() {
   );
   const [personalities, setPersonalities] = useState([]);
 
+
   // 얼굴 디테일 6종 (스샷 구조)
   const [faceShape, setFaceShape] = useState(""); // 얼굴형
   const [skinTone, setSkinTone] = useState("");   // 피부톤
@@ -41,8 +43,10 @@ function Home() {
   const [eyes, setEyes] = useState("");           // 눈
   const [nose, setNose] = useState("");           // 코
   const [lips, setLips] = useState("");           // 입
+
   const [bodyType, setBodyType] = useState("");   // 체형
   const [glasses, setGlasses] = useState("");      // 안경 유무
+
 
   const faceShapes = ["계란형", "둥근형", "각진형", "하트형", "긴형"];
   const skinTones  = ["밝은 17~21호", "중간 21~23호", "따뜻한 23~25호", "태닝톤", "쿨톤"];
@@ -50,7 +54,9 @@ function Home() {
   const eyeShapes  = ["크고 또렷함", "고양이상", "강아지상", "아치형", "처진눈매"];
   const noses      = ["오똑함", "버튼", "긴코", "작은코", "직선"];
   const lipTypes   = ["도톰", "얇음", "하트", "자연", "그라데"];
+
   const bodyTypes  = ["마름", "슬림", "보통", "통통", "근육질"];
+
 
   // 이미지 생성 상태
   const [generated, setGenerated] = useState(null);
@@ -93,6 +99,7 @@ function Home() {
       .filter(Boolean)
       .join(", ");
 
+
     const featureCombined = [
       detailSummary,
       age ? `나이:${age}` : "",
@@ -100,6 +107,7 @@ function Home() {
       glasses ? `안경:${glasses}` : "",
       personalities.length ? `성격:${personalities.join('/')}` : ""
     ]
+
       .filter(Boolean)
       .join(" | ");
 
@@ -107,6 +115,7 @@ function Home() {
       name,
       gender,
       age,
+
       // keep original feature for backward compatibility
       feature: featureCombined,
       options: selected,
@@ -164,6 +173,7 @@ function Home() {
   return (
     <>
       <StyleTag />
+
 
       <main className="mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch">
@@ -391,4 +401,6 @@ function Home() {
   );
 }
 
+
 export default Home;
+
