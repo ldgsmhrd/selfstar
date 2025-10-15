@@ -16,12 +16,18 @@ npm run dev -- --port 5174
 ```
 
 프록시 설정
-- `vite.config.js`에 `/auth`, `/api`, `/media` → `http://localhost:8000` 프록시가 설정되어 있습니다.
+- `vite.config.js`에 `/auth`, `/api`, `/media`, `/user` → `http://localhost:8000` 프록시가 설정되어 있습니다.
+	- `/user`는 세션 쿠키가 실리는 동일 오리진 호출을 위해 필요합니다.
 
 이미지 표시 로직
 - 백엔드가 반환하는 `url`이 있으면 우선 사용: `<img src="/media/xxx.png" />`
 - 없을 때는 data URI를 fallback으로 사용
 이 디렉토리는 FastAPI 백엔드(`/backend`)와 통신하는 React(Vite) 기반 프론트엔드입니다. 초기 버전은 백엔드 헬스 체크(`/health`) 호출 예제를 포함합니다.
+
+온보딩(Consent → UserSetup)
+- 로그인/회원가입 후 백엔드 `/auth/me`의 `needs_consent`가 true면 `/consent` → `/setup`으로 진행합니다.
+- `UserSetup.jsx`에서 성별과 생년월일을 수집하고 `PATCH /user/me/profile`로 동시 저장합니다.
+- 저장이 성공하면 `/imgcreate`로 이동합니다.
 
 ### 구조
 ```

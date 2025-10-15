@@ -150,8 +150,8 @@ def health():
 # (디버그) 등록된 경로를 보려면 /__routes 로 확인 가능
 @app.get("/__routes")
 def routes_debug():
-    return sorted(app.router.routes, key=lambda r: getattr(r, "path", ""))
-    # 또는: return [getattr(r, "path", "") for r in app.router.routes]
+    # Route 객체 자체는 JSON 직렬화가 어려우므로 경로 문자열만 반환
+    return sorted([getattr(r, "path", "") for r in app.router.routes])
 
 # ===== App lifecycle =====
 @app.get("/health", response_model=HealthResponse)

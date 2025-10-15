@@ -1,24 +1,12 @@
 // Imgcreate.jsx
-function Imgcreate() {
-  return (
-    <div>
-      <h1>이미지 생성 페이지</h1>
-      <p>여기에 이미지 생성 기능을 추가하세요.</p>
-    </div>
-  );
-}
-
-
-import { useState, useMemo } from "react"; // Removed unused imports
-// Vite 기준: /src 아래 경로 import
+import { useState, useMemo } from "react";
 import guideImg from "../../img/fixed_face.png";
 import { API_BASE } from "@/api/client";
 import TypingText from "../components/TypingText";
 import Field from "../components/Field";
 import StyleTag from "../components/StyleTag";
 
-
-/* ========================= Home (스샷 스타일) ========================= */
+/* ========================= Home ========================= */
 function Home() {
   // 기본 필드
   const [name, setName] = useState("이빛나");
@@ -35,8 +23,7 @@ function Home() {
   );
   const [personalities, setPersonalities] = useState([]);
 
-
-  // 얼굴 디테일 6종 (스샷 구조)
+  // 얼굴 디테일 6종
   const [faceShape, setFaceShape] = useState(""); // 얼굴형
   const [skinTone, setSkinTone] = useState("");   // 피부톤
   const [hair, setHair] = useState("");           // 헤어
@@ -45,8 +32,7 @@ function Home() {
   const [lips, setLips] = useState("");           // 입
 
   const [bodyType, setBodyType] = useState("");   // 체형
-  const [glasses, setGlasses] = useState("");      // 안경 유무
-
+  const [glasses, setGlasses] = useState("");     // 안경 유무
 
   const faceShapes = ["계란형", "둥근형", "각진형", "하트형", "긴형"];
   const skinTones  = ["밝은 17~21호", "중간 21~23호", "따뜻한 23~25호", "태닝톤", "쿨톤"];
@@ -54,9 +40,7 @@ function Home() {
   const eyeShapes  = ["크고 또렷함", "고양이상", "강아지상", "아치형", "처진눈매"];
   const noses      = ["오똑함", "버튼", "긴코", "작은코", "직선"];
   const lipTypes   = ["도톰", "얇음", "하트", "자연", "그라데"];
-
   const bodyTypes  = ["마름", "슬림", "보통", "통통", "근육질"];
-
 
   // 이미지 생성 상태
   const [generated, setGenerated] = useState(null);
@@ -81,46 +65,20 @@ function Home() {
   );
 
   const onGenerate = async () => {
+    if (loading) return;              // ✅ CHANGED: 더블클릭 방지
     setGenerated(null);
     setError(null);
     setGeneratedUrl("");
     setStatus("");
     setLoading(true);
 
-    // 백엔드/AI가 단순 키로 이해하기 쉽게 플랫한 문장과 옵션으로 변환
-    const detailSummary = [
-      faceShape && `얼굴형:${faceShape}`,
-      skinTone && `피부톤:${skinTone}`,
-      hair && `헤어:${hair}`,
-      eyes && `눈:${eyes}`,
-      nose && `코:${nose}`,
-      lips && `입:${lips}`,
-    ]
-      .filter(Boolean)
-      .join(", ");
-
-
-    const featureCombined = [
-      detailSummary,
-      age ? `나이:${age}` : "",
-      bodyType ? `체형:${bodyType}` : "",
-      glasses ? `안경:${glasses}` : "",
-      personalities.length ? `성격:${personalities.join('/')}` : ""
-    ]
-
-      .filter(Boolean)
-      .join(" | ");
-
+    // ✅ CHANGED: 문장 합치기(feature/featureCombined) 제거.
+    // 사용자가 고른 값을 "그대로" 보낸다.
     const payload = {
       name,
       gender,
-      age,
-
-      // keep original feature for backward compatibility
-      feature: featureCombined,
-      options: selected,
-      // send detailed fields so backend can build richer prompt
-      featureCombined,
+      age,                 // 숫자 그대로
+      options: selected,   // 옵션 그대로
       faceShape,
       skinTone,
       hair,
@@ -129,7 +87,7 @@ function Home() {
       lips,
       bodyType,
       glasses,
-      personalities,
+      personalities,       // 배열 그대로 (지금은 단일 선택이지만 구조 유지)
     };
 
     const MAX_RETRY = 2;
@@ -138,21 +96,23 @@ function Home() {
         setStatus(attempt === 1 ? "생성중…" : `다시 시도중… (${attempt}/${MAX_RETRY})`);
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 60_000);
-  const res = await fetch(`${API_BASE}/api/image/generate`, {
+
+        const res = await fetch(`${API_BASE}/api/image/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payload),  // ✅ CHANGED: 합친 문자열 대신 필드 그대로
           signal: controller.signal,
         });
+
         clearTimeout(t);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         if (!data?.ok) throw new Error(data?.message || "generation failed");
+
         setGenerated(data.image);
         if (data.url) {
-          // 백엔드가 반환한 /media 상대 경로를 절대 경로로 보정(API_BASE는 '' 또는 'http://localhost:8000')
-          const abs = `${API_BASE || ''}${data.url}`;
+          const abs = `${API_BASE || ""}${data.url}`;
           setGeneratedUrl(abs);
         }
         setStatus("");
@@ -174,7 +134,6 @@ function Home() {
     <>
       <StyleTag />
 
-
       <main className="mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch">
           {/* 좌측 미리보기 카드 */}
@@ -191,7 +150,6 @@ function Home() {
                     alt="generated"
                     className="absolute inset-0 w-full h-full object-contain"
                     onError={(e) => {
-                      // If /media URL fails (404/CORS), fall back to inline data URI
                       if (generated && e.currentTarget.src !== generated) {
                         e.currentTarget.src = generated;
                       }
@@ -203,16 +161,12 @@ function Home() {
               </div>
             </div>
             <div className="p-4 bg-blue-50">
-              <h3 className="text-xl md:text-2xl font-semibold mb-1 tracking-tight">
-                나만의 인플루언서를 만들어보세요.
-              </h3>
-              <p className="text-xs md:text-sm text-slate-600">
-                얼굴 ID를 고정할 때 일상과 바뀐 다양한 결과를 얻을 수 있습니다.
-              </p>
+              <h3 className="text-xl md:text-2xl font-semibold mb-1 tracking-tight">나만의 인플루언서를 만들어보세요.</h3>
+              <p className="text-xs md:text-sm text-slate-600">얼굴 ID를 고정할 때 일상과 바뀐 다양한 결과를 얻을 수 있습니다.</p>
             </div>
           </section>
 
-          {/* 우측 입력 카드 (스샷 레이아웃) */}
+          {/* 우측 입력 카드 */}
           <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full">
             {/* 말풍선 헤더 */}
             <div className="flex items-start gap-3 mb-4">
@@ -259,7 +213,7 @@ function Home() {
                   className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
                   value={age}
                   onChange={(e) => {
-                    const v = Number(e.target.value.replace(/[^\d]/g, ""));
+                    const v = Number(String(e.target.value).replace(/[^\d]/g, ""));
                     if (Number.isNaN(v)) return setAge("");
                     const clamped = Math.max(20, Math.min(80, v));
                     setAge(clamped);
@@ -356,7 +310,9 @@ function Home() {
             </div>
 
             {/* 성격 */}
-            <div className="mt-2 mb-1 text-sm font-semibold">성격 <span className="text-slate-400"></span></div>
+            <div className="mt-2 mb-1 text-sm font-semibold">
+              성격 <span className="text-slate-400"></span>
+            </div>
             <div className="grid grid-cols-4 gap-2 mb-3">
               {personalityList.map((p) => {
                 const on = personalities.includes(p);
@@ -364,7 +320,7 @@ function Home() {
                   <button
                     key={p}
                     type="button"
-                    onClick={() => setPersonalities(on ? [] : [p])} // single-select
+                    onClick={() => setPersonalities(on ? [] : [p])} // single-select 유지
                     className={"chip " + (on ? "chip-on" : "")}
                     aria-pressed={on}
                   >
@@ -374,7 +330,7 @@ function Home() {
               })}
             </div>
 
-            {/* 버튼 두 개 (우측 정렬) */}
+            {/* 버튼 */}
             <div className="flex justify-end gap-2 mt-4">
               <button
                 className={`btn-outline ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
@@ -401,6 +357,4 @@ function Home() {
   );
 }
 
-
 export default Home;
-

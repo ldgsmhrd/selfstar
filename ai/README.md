@@ -34,6 +34,10 @@ $env:AI_REQUIRE_MODEL = "true"
 python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
 # Health: http://localhost:8600/health
 ```
+또는 루트 스크립트 사용
+```powershell
+& ..\scripts\start-ai.ps1
+```
 
 API
 - POST /predict
@@ -44,3 +48,4 @@ API
 - 응답 이미지는 Pillow로 검증·재인코딩되어 브라우저에서 바로 표시 가능한 PNG입니다.
  - Pillow 미설치 시 /predict는 1x1 PNG placeholder로 안전하게 응답합니다. 텍스트 렌더링이 필요하면 Pillow 설치 권장.
  - .env 파일은 리포지토리 루트에 위치하면 자동으로 로드됩니다.
+ - 백엔드가 `AI_SERVICE_URL`로 이 서버를 호출하여 `/api/image/generate`를 제공합니다.

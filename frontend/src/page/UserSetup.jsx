@@ -19,6 +19,8 @@ export default function SelfStarOnboarding({ onComplete }) {
   const [step, setStep] = useState(1);
   const [gender, setGender] = useState("");
   const [birth, setBirth] = useState({ y: "", m: "", d: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState(null);
 
   const goNextFromGender = useCallback((val) => {
     setGender(val);
@@ -35,18 +37,31 @@ export default function SelfStarOnboarding({ onComplete }) {
     return `${y}-${mm}-${dd}`;
   }, [birth]);
 
-  const finish = useCallback(() => {
-    if (!birthIso) return;
+  const finish = useCallback(async () => {
+    if (!birthIso || !gender || submitting) return;
+    setSubmitting(true);
+    setError(null);
     try {
-      // 선택적으로 다음 페이지에서 사용할 수 있도록 저장
-      const payload = { gender, birth: birthIso };
-      localStorage.setItem("ss_onboarding", JSON.stringify(payload));
-    } catch {
-      // ignore storage errors (e.g., private mode)
+      // 서버에 성별+생년월일 동시 저장
+      const res = await fetch("/user/me/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ birthday: birthIso, gender }),
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(`프로필 저장 실패: HTTP ${res.status} ${t}`);
+      }
+      const data = await res.json().catch(() => null);
+  if (onComplete) onComplete({ gender, birth: birthIso, server: data });
+  navigate("/imgcreate");
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setSubmitting(false);
     }
-    if (onComplete) onComplete({ gender, birth: birthIso });
-    navigate("/imgcreate");
-  }, [birthIso, gender, onComplete, navigate]);
+  }, [birthIso, gender, submitting, onComplete, navigate]);
 
   return (
     <div style={{ minHeight: "100dvh" }}>
@@ -93,6 +108,8 @@ export default function SelfStarOnboarding({ onComplete }) {
                     onChange={setBirth}
                     onPrev={goPrevFromBirth}
                     onNext={finish}
+                    submitting={submitting}
+                    error={error}
                   />
                 </div>
               </div>
@@ -233,7 +250,7 @@ function GenderStepInner({ value = "", onChange, onNext, onPrev }) {
 }
 
 /* -------------------- Step 2: Birthdate -------------------- */
-function BirthStepInner({ value = { y: "", m: "", d: "" }, onChange, onPrev, onNext }) {
+function BirthStepInner({ value = { y: "", m: "", d: "" }, onChange, onPrev, onNext, submitting = false, error = null }) {
   const now = useMemo(() => new Date(), []);
   const maxYear = now.getFullYear() - 13; // 만 13세 이상
   const minYear = maxYear - 87; // 최대 100세 기준 여유
@@ -306,12 +323,15 @@ function BirthStepInner({ value = { y: "", m: "", d: "" }, onChange, onPrev, onN
       </div>
 
       <div className="ss-hr" aria-hidden="true" />
+      {error && (
+        <div role="alert" style={{ color: "#dc2626", margin: "6px 2px 0" }}>{error}</div>
+      )}
       <nav className="ss-actions" aria-label="이동">
         <button className="ss-btn" type="button" onClick={onPrev}>
           이전
         </button>
-        <button className="ss-btn primary" type="button" disabled={!valid} onClick={onNext}>
-          완료
+        <button className="ss-btn primary" type="button" disabled={!valid || submitting} onClick={onNext}>
+          {submitting ? "저장 중..." : "완료"}
         </button>
       </nav>
       <div className="ss-shadow-foot" aria-hidden="true" />

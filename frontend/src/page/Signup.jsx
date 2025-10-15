@@ -122,10 +122,9 @@ export default function AuthScreen() {
                   <a className="btn kakao" href="#" aria-label="카카오로 로그인" onClick={handleAuth("kakao")}>
                     <svg className="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C6.48 3 2 6.58 2 10.98c0 2.98 2.22 5.6 5.49 6.86l-.76 3.9a.5.5 0 00.75.54l4.14-2.6c.12.01.24.02.37.02 5.52 0 10-3.58 10-7.98S17.52 3 12 3z" fill="#181600"/></svg>
                     카카오로 계속하기
-                    <span className="pill">1초 로그인</span>
                   </a>
                   <a className="btn google" href="#" aria-label="구글로 로그인" onClick={handleAuth("google")}>
-                    <svg className="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.35 11.1H12v2.9h5.35c-.23 1.48-1.8 4.34-5.35 4.34a6.18 6.18 0 110-12.36c1.76 0 3.32.66 4.55 1.75l2.05-2.02A9.76 9.76 0 0012 2.5C6.75 2.5 2.5 6.75 2.5 12S6.75 21.5 12 21.5c5.77 0 9.5-4.05 9.5-9.76 0-.67-.08-1.19-.15-1.64z" fill="#ffffff"/></svg>
+                    <svg className="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.35 11.1H12v2.9h5.35c-.23 1.48-1.8 4.34-5.35 4.34a6.18 6.18 0 110-12.36c1.76 0 3.32.66 4.55 1.75l2.05-2.02A9.76 9.76 0 0012 2.5C6.75 2.5 2.5 6.75 2.5 12S6.75 21.5 12 21.5c5.77 0 9.5-4.05 9.5-9.76 0-.67-.08-1.19-.15-1.64z" fill="currentColor"/></svg>
                     Google로 계속하기
                   </a>
                   <a className="btn naver" href="#" aria-label="네이버로 로그인" onClick={handleAuth("naver")}>
@@ -147,7 +146,7 @@ export default function AuthScreen() {
                     카카오계정으로 회원가입
                   </a>
                   <a className="btn google" href="#" aria-label="구글로 회원가입" onClick={handleAuth("google")}>
-                    <svg className="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.35 11.1H12v2.9h5.35c-.23 1.48-1.8 4.34-5.35 4.34a6.18 6.18 0 110-12.36c1.76 0 3.32.66 4.55 1.75l2.05-2.02A9.76 9.76 0 0012 2.5C6.75 2.5 2.5 6.75 2.5 12S6.75 21.5 12 21.5c5.77 0 9.5-4.05 9.5-9.76 0-.67-.08-1.19-.15-1.64z" fill="#ffffff"/></svg>
+                    <svg className="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.35 11.1H12v2.9h5.35c-.23 1.48-1.8 4.34-5.35 4.34a6.18 6.18 0 110-12.36c1.76 0 3.32.66 4.55 1.75l2.05-2.02A9.76 9.76 0 0012 2.5C6.75 2.5 2.5 6.75 2.5 12S6.75 21.5 12 21.5c5.77 0 9.5-4.05 9.5-9.76 0-.67-.08-1.19-.15-1.64z" fill="currentColor"/></svg>
                     Google 계정으로 회원가입
                   </a>
                   <a className="btn naver" href="#" aria-label="네이버로 회원가입" onClick={handleAuth("naver")}>
