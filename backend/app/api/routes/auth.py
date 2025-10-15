@@ -10,6 +10,7 @@ import httpx
 import os
 import logging
 from urllib.parse import urlencode
+from typing import Optional
 
 from app.api.models.users import upsert_user_from_oauth, find_user_by_id
 
@@ -32,6 +33,22 @@ GOOGLE_SCOPE = os.getenv("GOOGLE_SCOPE", "openid email profile")
 AUTH_ALWAYS_HOME = os.getenv("AUTH_ALWAYS_HOME", "1").lower() in ("1", "true", "yes")
 
 
+# ----- 동의(생일 등) 필요 여부 판단 -----
+def _needs_consent(user_row: Optional[dict]) -> bool:
+    try:
+        if not user_row:
+            return False
+        b = user_row.get("user_birthday")
+        if not b:
+            return True
+        if isinstance(b, str) and b.strip() in {"", "0000-00-00", "0000-00-00 00:00:00"}:
+            return True
+        return False
+    except Exception:
+        # 보수적으로 실패 시 동의 필요로 보지 않음
+        return False
+
+
 # ----- Me (세션 기반 본인 확인) -----
 @router.get("/me")
 async def me(request: Request):
@@ -52,6 +69,8 @@ async def me(request: Request):
             "nick": user.get("user_nick"),
             "img": user.get("user_img"),
             "platform": user.get("user_platform"),
+            # 프론트가 필요 시 라우팅 판단에 사용할 수 있도록 노출
+            "needs_consent": _needs_consent(user),
         },
     }
 
@@ -137,11 +156,12 @@ async def kakao_callback(request: Request):
         return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
 
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
-    # Temporarily force redirect to home after auth (can disable via AUTH_ALWAYS_HOME=0)
+    # 동의 필요(생일 등) 시 동의 페이지 우선 이동
+    if _needs_consent(user_row) or user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
+    # 그 외 기본 정책
     if AUTH_ALWAYS_HOME:
         return RedirectResponse(url=f"{FRONTEND_URL}/")
-    if user_row.get("is_new"):
-        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     return RedirectResponse(url=f"{FRONTEND_URL}/")
 
 
@@ -264,10 +284,10 @@ async def google_callback(request: Request):
 
 
     request.session["user_id"] = int(user_row["user_id"])  # 쿠키 세션 저장
+    if _needs_consent(user_row) or user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     if AUTH_ALWAYS_HOME:
         return RedirectResponse(url=f"{FRONTEND_URL}/")
-    if user_row.get("is_new"):
-        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     return RedirectResponse(url=f"{FRONTEND_URL}/")
 
 
@@ -342,8 +362,8 @@ async def naver_callback(request: Request):
         return RedirectResponse(url=f"{FRONTEND_URL}/signup?error=upsert")
       
     request.session["user_id"] = int(user_row["user_id"])
+    if _needs_consent(user_row) or user_row.get("is_new"):
+        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     if AUTH_ALWAYS_HOME:
         return RedirectResponse(url=f"{FRONTEND_URL}/")
-    if user_row.get("is_new"):
-        return RedirectResponse(url=f"{FRONTEND_URL}/consent")
     return RedirectResponse(url=f"{FRONTEND_URL}/")

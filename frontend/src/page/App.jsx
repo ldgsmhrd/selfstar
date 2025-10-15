@@ -14,9 +14,10 @@ const active = "bg-blue-600 text-white shadow";
 const idle = "text-slate-600 hover:bg-slate-100";
 
 // 이미지
-import naverImg from "../../img/naver.png";
-import kakaoImg from "../../img/kakao.png";
-import googleImg from "../../img/google.png";
+// 소셜 로그인 아이콘은 모달 제거로 미사용
+// import naverImg from "../../img/naver.png";
+// import kakaoImg from "../../img/kakao.png";
+// import googleImg from "../../img/google.png";
 import heroImg from "../../img/hero.png";
 import step2Img from "../../img/step2.png";
 import step3Img from "../../img/step3.png";
@@ -201,20 +202,7 @@ function Home({ onStart }) {
 /* ========================= App Shell ========================= */
 export default function App() {
   const { user, logout } = useAuth();
-  const [openSignUp, setOpenSignUp] = useState(false);
-  const [openLogin, setOpenLogin] = useState(false);
-  const signRef = useRef(null);
-  const loginRef = useRef(null);
-
-  // 팝오버 바깥 클릭 닫기
-  useEffect(() => {
-    const onClick = (e) => {
-      if (signRef.current && !signRef.current.contains(e.target)) setOpenSignUp(false);
-      if (loginRef.current && !loginRef.current.contains(e.target)) setOpenLogin(false);
-    };
-    window.addEventListener("click", onClick);
-    return () => window.removeEventListener("click", onClick);
-  }, []);
+  // 모달 대신 /signup 라우트로 이동하므로 관련 상태 제거
 
   return (
     <div className="min-h-screen flex flex-col bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_40%,#f7f7fb_100%)] text-slate-900">
@@ -248,45 +236,7 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <>
-                <div className="relative" ref={signRef}>
-                  <button
-                    className={"btn-ghost " + (openSignUp ? "ring-2 ring-slate-300" : "")}
-                    onClick={(e) => { e.stopPropagation(); setOpenSignUp((v) => !v); setOpenLogin(false); }}
-                  >
-                    무료로 회원가입
-                  </button>
-                  {openSignUp && (
-                    <Popover>
-                      <p className="text-sm text-slate-500 mb-3">무료 회원가입</p>
-                      <div className="flex flex-col gap-3">
-                        <AuthItem label="네이버로 회원가입" img={naverImg} href={API ? `${API}/auth/naver` : "/auth/naver"} />
-                        <AuthItem label="카카오로 회원가입" img={kakaoImg} href={API ? `${API}/auth/kakao` : "/auth/kakao"} />
-                        <AuthItem label="Google로 회원가입" img={googleImg} href={API ? `${API}/auth/google` : "/auth/google"} />
-                      </div>
-                    </Popover>
-                  )}
-                </div>
-
-                <div className="relative" ref={loginRef}>
-                  <button
-                    className={"btn-ghost " + (openLogin ? "ring-2 ring-slate-300" : "")}
-                    onClick={(e) => { e.stopPropagation(); setOpenLogin((v) => !v); setOpenSignUp(false); }}
-                  >
-                    로그인
-                  </button>
-                  {openLogin && (
-                    <Popover>
-                      <p className="text-sm text-slate-500 mb-3">간편 로그인</p>
-                      <div className="flex flex-col gap-3">
-                        <AuthItem label="네이버로 로그인" img={naverImg} href={API ? `${API}/auth/naver` : "/auth/naver"} />
-                        <AuthItem label="카카오로 로그인" img={kakaoImg} href={API ? `${API}/auth/kakao` : "/auth/kakao"} />
-                        <AuthItem label="Google로 로그인" img={googleImg} href={API ? `${API}/auth/google` : "/auth/google"} />
-                      </div>
-                    </Popover>
-                  )}
-                </div>
-              </>
+              <Link to="/signup" className="btn-ghost">회원가입 / 로그인</Link>
             )}
           </div>
         </div>
@@ -333,42 +283,7 @@ function Alerts() {
 }
 
 /* ========================= UI Utilities ========================= */
-function Popover({ children }) {
-  return (
-    <div
-      className="absolute top-full right-0 mt-3 w-[380px] rounded-2xl border border-slate-200 bg-white shadow-[0_12px_30px_rgba(2,6,23,0.12)] p-5 z-50"
-      onClick={(e) => e.stopPropagation()}
-    >
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, hint, children }) {
-  return (
-    <div className="mb-5">
-      {label && <label className="block mb-2 text-sm font-semibold">{label}</label>}
-      {children}
-      {hint && <p className="mt-2 text-xs text-blue-500/80">{hint}</p>}
-    </div>
-  );
-}
-
-function AuthItem({ label, img, href }) {
-  return (
-    <a
-      href={href}
-      className="w-full flex items-center justify-start gap-3 px-6 py-3 rounded-full border border-gray-300 bg-white hover:bg-gray-50 transition"
-    >
-      {img ? (
-        <img src={img} alt="" className="w-5 h-5 object-contain" />
-      ) : (
-        <span className="w-3 h-3 rounded-full bg-gray-300" />
-      )}
-      <span>{label}</span>
-    </a>
-  );
-}
+// 제거: 모달/팝오버 관련 컴포넌트는 더 이상 사용하지 않음
 
 /* ========================= Reveal / Landing (자리표시용) ========================= */
 function useInView(threshold = 0.15) {
