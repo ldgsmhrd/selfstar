@@ -45,15 +45,66 @@ function Home({ compact = false }) {
   // 이미지 생성 상태
   const [generated, setGenerated] = useState(null);
   const [generatedUrl, setGeneratedUrl] = useState("");
+  const [lastPayload, setLastPayload] = useState(null);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // 확정 버튼 활성화 여부: 인플루언서 정보(이름/성별/나이/안경) + 얼굴 디테일(6종) 모두 선택 시에만 활성화
   const isInfoReady = Boolean(String(name || "").trim()) && Boolean(gender) && Boolean(age) && Boolean(glasses);
   const isFaceReady = Boolean(faceShape) && Boolean(skinTone) && Boolean(hair) && Boolean(eyes) && Boolean(nose) && Boolean(lips);
   const isBodyReady = Boolean(bodyType) && (Array.isArray(personalities) && personalities.length > 0);
   const isConfirmReady = isInfoReady && isFaceReady && isBodyReady;
+
+  // 현재 입력 상태로부터 payload 스냅샷
+  const currentPayload = useMemo(
+    () => ({
+      name,
+      gender,
+      age,
+      options: selected,
+      faceShape,
+      skinTone,
+      hair,
+      eyes,
+      nose,
+      lips,
+      bodyType,
+      glasses,
+      personalities,
+    }),
+    [
+      name,
+      gender,
+      age,
+      selected,
+      faceShape,
+      skinTone,
+      hair,
+      eyes,
+      nose,
+      lips,
+      bodyType,
+      glasses,
+      personalities,
+    ],
+  );
+
+  // 마지막 생성 이후로 입력이 변경되었는지
+  const isDirty = useMemo(() => {
+    if (!lastPayload) return true;
+    try {
+      return JSON.stringify(currentPayload) !== JSON.stringify(lastPayload);
+    } catch {
+      return true;
+    }
+  }, [currentPayload, lastPayload]);
+
+  // 버튼 가능 조건
+  const canGenerate = isConfirmReady && (!generated || isDirty);
+  const canConfirm = isConfirmReady && Boolean(generated) && !isDirty;
 
   // 공통 Select
   const Select = ({ value, onChange, children }) => (
@@ -80,21 +131,7 @@ function Home({ compact = false }) {
 
     // ✅ CHANGED: 문장 합치기(feature/featureCombined) 제거.
     // 사용자가 고른 값을 "그대로" 보낸다.
-    const payload = {
-      name,
-      gender,
-      age,                 // 숫자 그대로
-      options: selected,   // 옵션 그대로
-      faceShape,
-      skinTone,
-      hair,
-      eyes,
-      nose,
-      lips,
-      bodyType,
-      glasses,
-      personalities,       // 배열 그대로 (지금은 단일 선택이지만 구조 유지)
-    };
+    const payload = currentPayload;
 
     const MAX_RETRY = 2;
     for (let attempt = 1; attempt <= MAX_RETRY; attempt++) {
@@ -103,11 +140,11 @@ function Home({ compact = false }) {
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 60_000);
 
-        const res = await fetch(`${API_BASE}/api/images`, {
+        const res = await fetch(`${API_BASE}/api/images/preview`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify(payload),  // ✅ CHANGED: 합친 문자열 대신 필드 그대로
+          body: JSON.stringify(payload),  // 필드 그대로
           signal: controller.signal,
         });
 
@@ -116,11 +153,10 @@ function Home({ compact = false }) {
         const data = await res.json();
         if (!data?.ok) throw new Error(data?.message || "generation failed");
 
+        // 미리보기: 저장하지 않고 data URI만 세팅
         setGenerated(data.image);
-        if (data.url) {
-          const abs = `${API_BASE || ""}${data.url}`;
-          setGeneratedUrl(abs);
-        }
+        setGeneratedUrl("");
+        setLastPayload(payload);
         setStatus("");
         break;
       } catch (e) {
@@ -134,6 +170,52 @@ function Home({ compact = false }) {
       }
     }
     setLoading(false);
+  };
+
+  // 성별 변환 및 생년월일 계산 (나이 기준 단순 변환: 해당 연도의 1월 1일)
+  const mapGender = (g) => (g === "남" ? "남성" : "여성");
+  const birthdayFromAge = (a) => {
+    const n = Number(a);
+    if (!Number.isFinite(n) || n <= 0 || n > 120) return null;
+    const today = new Date();
+    const year = today.getFullYear() - n;
+    return `${year}-01-01`;
+  };
+
+  const doSaveProfile = async () => {
+    if (saving) return;
+    // 나이 -> 생년월일, 성별 매핑
+    const bday = birthdayFromAge(age);
+    const mappedGender = mapGender(gender);
+    if (!bday) {
+      setError("유효한 나이를 입력해주세요.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/users/me/profile`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ birthday: bday, gender: mappedGender }),
+      });
+      if (res.status === 401) throw new Error("로그인이 필요합니다.");
+      if (!res.ok) throw new Error(`프로필 저장 실패: ${res.status}`);
+      const data = await res.json();
+      if (!data?.ok) throw new Error(data?.message || "프로필 저장 실패");
+      setStatus("프로필 저장 완료");
+      // 저장 완료 후, 상위(App)에게 프로필 선택 모달 열도록 신호
+      try {
+        window.dispatchEvent(new CustomEvent("open-profile-select"));
+      } catch {
+        // no-op: dispatch might fail in non-browser environments
+      }
+    } catch (e) {
+      setError(e?.message || String(e));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -208,6 +290,8 @@ function Home({ compact = false }) {
                 </div>
               </Field>
             </div>
+
+            {/* 인스타 핸들 입력 제거 (기본 null 저장) */}
 
             {/* 나이 */}
             <div className="grid grid-cols-2 gap-4 mt-1">
@@ -339,19 +423,26 @@ function Home({ compact = false }) {
             {/* 버튼 */}
             <div className="flex justify-end gap-2 mt-4">
               <button
-                className={`btn-outline ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+                className={`${canGenerate ? "btn-primary" : "btn-outline"} ${(loading || !canGenerate) ? "opacity-60 cursor-not-allowed" : ""}`}
                 type="button"
                 onClick={onGenerate}
-                disabled={loading}
+                disabled={loading || !canGenerate}
               >
                 이미지 생성
               </button>
               <button
-                className={`${isConfirmReady ? "btn-primary" : "btn-outline"} ${(loading || !isConfirmReady) ? "opacity-60 cursor-not-allowed" : ""}`}
-                onClick={onGenerate}
-                disabled={loading || !isConfirmReady}
+                className={`${canConfirm ? "btn-primary" : "btn-outline"} ${((loading || saving) || !canConfirm) ? "opacity-60 cursor-not-allowed" : ""}`}
+                onClick={() => {
+                  if (!canConfirm || loading || saving) return;
+                  if (!generated || !lastPayload) {
+                    setError("먼저 이미지를 생성하세요.");
+                    return;
+                  }
+                  setConfirmOpen(true);
+                }}
+                disabled={(loading || saving) || !canConfirm}
               >
-                {loading ? "생성중…" : "이미지 확정"}
+                {saving ? "저장중…" : "프로필 저장"}
               </button>
             </div>
 
@@ -359,6 +450,45 @@ function Home({ compact = false }) {
           </section>
         </div>
       </main>
+
+      {/* 확인 모달: 프로필 저장 전에 한번 더 묻기 */}
+      {confirmOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 grid place-items-center bg-[rgba(15,23,42,0.45)] p-4"
+          onClick={() => setConfirmOpen(false)}
+        >
+          <div
+            className="relative w-[min(420px,94vw)] rounded-2xl border border-blue-200 bg-white p-5 shadow-[0_30px_70px_rgba(2,6,23,.35)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              aria-label="닫기"
+              onClick={() => setConfirmOpen(false)}
+              className="absolute top-2.5 right-3 w-8 h-8 rounded-full border bg-white shadow"
+            >
+              ×
+            </button>
+            <h3 className="text-lg font-bold mb-1">저장 하시겠습니까?</h3>
+            <p className="text-sm text-slate-600">입력하신 성별/생년월일 정보가 프로필에 저장됩니다.</p>
+            <div className="flex justify-end gap-2 mt-4">
+              <button className="btn-outline" onClick={() => setConfirmOpen(false)}>아니요</button>
+              <button
+                className="btn-primary disabled:opacity-60"
+                disabled={saving}
+                onClick={async () => {
+                  await doSaveProfile();
+                  setConfirmOpen(false);
+                }}
+              >
+                {saving ? "저장중…" : "저장"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
   );
 }
