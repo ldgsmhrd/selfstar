@@ -3,10 +3,10 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Routes, Route, NavLink, Link } from "react-router-dom";
 import Signup from "./Signup.jsx";
 import Imgcreate from "./Imgcreate.jsx";
+import MyPage from "./MyPage.jsx";
 import Footer from "../../components/Footer.jsx";
 import ConsentPage from "./ConsentPage.jsx";
 import UserSetup from "./UserSetup.jsx";
-// import MyPage from "./MyPage.jsx";
 // import Chat from "./Chat.jsx";
 
 const base = "px-3 py-1.5 rounded-full transition";
@@ -250,6 +250,14 @@ export default function App() {
           <Route path="/consent" element={<ConsentPage />} />
           <Route path="/setup" element={<UserSetup />} />
           <Route path="/imgcreate" element={<Imgcreate />} />
+          <Route
+            path="/mypage"
+            element={
+              <Private user={user}>
+                <MyPage />
+              </Private>
+            }
+          />
           <Route path="/alerts" element={<Alerts />} />
         </Routes>
       </main>

@@ -1,7 +1,7 @@
 // SelfStarOnboarding.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
 import fixedFace from "../../img/fixed_face.png";
+import ProfileSelect from "./ProfileSelect";
 
 /**
  * SelfStar 온보딩 (EAF5FE 계열)
@@ -15,12 +15,12 @@ import fixedFace from "../../img/fixed_face.png";
  */
 
 export default function SelfStarOnboarding({ onComplete }) {
-  const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [gender, setGender] = useState("");
   const [birth, setBirth] = useState({ y: "", m: "", d: "" });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const [showProfileSelect, setShowProfileSelect] = useState(false);
 
   const goNextFromGender = useCallback((val) => {
     setGender(val);
@@ -55,13 +55,14 @@ export default function SelfStarOnboarding({ onComplete }) {
       }
       const data = await res.json().catch(() => null);
   if (onComplete) onComplete({ gender, birth: birthIso, server: data });
-  navigate("/imgcreate");
+  // 온보딩 완료 후: 바로 ImgCreate로 이동하지 않고 프로필 선택 모달 오픈
+  setShowProfileSelect(true);
     } catch (e) {
       setError(e.message || String(e));
     } finally {
       setSubmitting(false);
     }
-  }, [birthIso, gender, submitting, onComplete, navigate]);
+  }, [birthIso, gender, submitting, onComplete]);
 
   return (
     <div style={{ minHeight: "100dvh" }}>
@@ -117,6 +118,35 @@ export default function SelfStarOnboarding({ onComplete }) {
           </section>
         </div>
       </div>
+      {showProfileSelect && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(15,23,42,0.45)",
+            display: "grid",
+            placeItems: "center",
+            padding: "16px",
+          }}
+        >
+          <div
+            style={{
+              width: "min(1200px, 96vw)",
+              maxHeight: "96dvh",
+              overflow: "auto",
+              borderRadius: 18,
+              boxShadow: "0 30px 70px rgba(2,6,23,.35)",
+              background: "#fff",
+            }}
+          >
+            {/* ProfileSelect 자체가 페이지 레이아웃을 포함하지만, 모달 내에서도 정상 렌더링됩니다. */}
+            <ProfileSelect maxSlots={4} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

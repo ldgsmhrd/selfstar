@@ -28,11 +28,7 @@ export default function ProfileSelect({ maxSlots = 4 }) {
     return t ? t[0].toUpperCase() : "+";
   };
 
-  const openCreateModal = (index) => {
-    setEditingIndex(index);
-    setNewName("");
-    setModalOpen(true);
-  };
+  // 프로필 생성 모달은 더 이상 사용하지 않음 (add 클릭 시 바로 이동)
 
   const closeModal = () => {
     setModalOpen(false);
@@ -50,12 +46,15 @@ export default function ProfileSelect({ maxSlots = 4 }) {
     });
     setSelectedIndex(editingIndex);
     closeModal();
+    // 프로필 생성 후 바로 이미지 생성 페이지로 이동
+    navigate("/imgcreate", { state: { profileName: name } });
   };
 
   const selectTile = (idx) => {
     const t = tiles[idx];
     if (t.type === "add") {
-      openCreateModal(idx);
+      // 프로필 추가 버튼 클릭 시 즉시 이미지 생성 페이지로 이동
+      navigate("/imgcreate", { state: { profileName: null, intent: "create-profile" } });
     } else if (t.type === "profile") {
       setSelectedIndex(idx);
     } else {
