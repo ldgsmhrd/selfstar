@@ -1,82 +1,72 @@
 # backend/app/routes/images.py
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 import os
 import httpx
 import logging
 import base64
+import re
+import uuid
 from datetime import datetime
 
-from app.api.schemas.images import GenerateImageRequest
+from app.api.schemas.images import GenerateImageRequest, ImageSaveRequest
 
 router = APIRouter(prefix="/api", tags=["images"])
 log = logging.getLogger("images")
 
+def _save_data_uri(data_uri: str):
+    m = re.match(r"^data:(.*?);base64,(.*)$", data_uri)
+    if not m:
+        raise ValueError("invalid_data_uri")
+    mime, b64 = m.groups()
+    ext = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+    }.get(mime, ".bin")
+    raw = base64.b64decode(b64)
 
-@router.post("/images") 
-async def generate_image(payload: GenerateImageRequest):
-    """
-    프론트 입력을 가공 없이 AI 서비스로 전달하고,
-    data URI 이미지를 저장 후 URL과 함께 반환한다.
-    """
-    # Gemini만 사용하므로 폴백을 비활성화하고 항상 엄격 모드로 처리합니다.
-    strict = True
-    ai_url = os.getenv("AI_SERVICE_URL") or "http://localhost:8600"
+    # 저장 위치: MEDIA_ROOT (기본 backend/app/media)
+    app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    media_root = os.getenv("MEDIA_ROOT") or os.path.join(app_dir, "media")
+    os.makedirs(media_root, exist_ok=True)
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    fname = f"gen_{ts}_{uuid.uuid4().hex[:8]}{ext}"
+    out_path = os.path.join(media_root, fname)
+    with open(out_path, "wb") as f:
+        f.write(raw)
+    # 정적 서빙 경로에 맞춘 URL 생성
+    rel_url = f"/media/{fname}"
+    return out_path, rel_url
 
-    # 그대로 전달할 바디
+
+@router.post("/images/preview", summary="AI 미리보기(저장 없음)")
+async def preview_image(payload: GenerateImageRequest):
+    ai_url = (os.getenv("AI_SERVICE_URL") or "http://localhost:8600").rstrip("/")
     body = payload.model_dump(exclude_none=True)
-
-    # 안전 로그(민감/대용량 없음)
-    try:
-        log.info(
-            "img.generate pass-through keys=%s",
-            sorted(list(body.keys())),
-        )
-    except Exception:
-        pass
-
-    # --- AI 서비스 호출 ---
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            r = await client.post(f"{ai_url.rstrip('/')}/predict", json=body)
+            r = await client.post(f"{ai_url}/predict", json=body)
     except Exception as e:
-        # 폴백 없이 즉시 실패 처리
         raise HTTPException(status_code=502, detail=f"ai_delegate_error: {e}")
 
-    # --- 성공 응답 처리 ---
-    if r is not None and r.status_code == 200:
-        data = r.json()
-        if data.get("ok") and data.get("image"):
-            data_uri = data["image"]
-            # /media 저장 시도 (data URI가 너무 작으면 저장 생략)
-            try:
-                if data_uri.startswith("data:") and "," in data_uri:
-                    header, b64 = data_uri.split(",", 1)
-                    mime = header.split(";")[0].split(":", 1)[1] if ":" in header else "image/png"
-                    ext = {
-                        "image/png": ".png",
-                        "image/jpeg": ".jpg",
-                        "image/webp": ".webp",
-                    }.get(mime, ".bin")
-                    raw = base64.b64decode(b64)
-                    if not raw or len(raw) < 64:
-                        log.warning("image bytes too small: %s bytes", len(raw) if raw else 0)
-                        return {"ok": True, "image": data_uri}
+    if r.status_code != 200:
+        raise HTTPException(status_code=502, detail="ai_failed")
+    data = r.json()
+    image = data.get("image")
+    if not (isinstance(image, str) and image.startswith("data:")):
+        raise HTTPException(status_code=502, detail="invalid_ai_response")
+    return {"ok": True, "image": image}
 
-                    app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))  # backend/app
-                    media_root = os.getenv("MEDIA_ROOT") or os.path.join(app_dir, "media")
-                    os.makedirs(media_root, exist_ok=True)
-                    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
-                    filename = f"gen_{ts}{ext}"
-                    out_path = os.path.join(media_root, filename)
-                    with open(out_path, "wb") as f:
-                        f.write(raw)
-                    return {"ok": True, "image": data_uri, "url": f"/media/{filename}"}
-            except Exception as se:
-                log.warning("failed to save media: %s", se)
-                return {"ok": True, "image": data_uri}
 
-        # AI가 ok=false거나 image 없음 → 즉시 실패 처리
-        raise HTTPException(status_code=502, detail=f"ai_failed: {r.text}")
-
-        # AI 서버 사용이 필수이므로, 여기까지 도달했다면 가용한 응답이 없는 상태입니다.
-        raise HTTPException(status_code=503, detail="ai_unavailable")
+@router.post("/images/save", summary="미리보기 데이터 저장")
+async def save_image(body: ImageSaveRequest):
+    try:
+        _, url = _save_data_uri(body.image)
+        return {"ok": True, "url": url}
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid_data_uri")
+    except Exception as e:
+        log.warning("failed to save media: %s", e)
+        raise HTTPException(status_code=500, detail="save_failed")

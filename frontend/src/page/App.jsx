@@ -210,6 +210,16 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showImgcreateModal, setShowImgcreateModal] = useState(false);
 
+  // Imgcreate에서 저장 완료 후 ProfileSelect만 가운데 열고 Imgcreate 모달은 닫기
+  useEffect(() => {
+    const onOpenProfileSelect = () => {
+      setShowImgcreateModal(false);
+      setShowProfileModal(true);
+    };
+    window.addEventListener("open-profile-select", onOpenProfileSelect);
+    return () => window.removeEventListener("open-profile-select", onOpenProfileSelect);
+  }, []);
+
   const openChatFlow = (e) => {
     e.preventDefault();
     setShowProfileModal(true);
@@ -287,7 +297,7 @@ export default function App() {
         </Routes>
       </main>
 
-      {/* ProfileSelect 모달: 헤더에서 채팅 클릭 시 */}
+      {/* ProfileSelect 모달: 가운데 정렬 (채팅 클릭 or 저장 완료 시) */}
       {showProfileModal && (
         <div
           role="dialog"

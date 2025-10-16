@@ -24,3 +24,8 @@ class GenerateImageRequest(BaseModel):
     bodyType: Optional[str] = None
     glasses: Optional[str] = None
     personalities: Optional[List[str]] = None
+
+
+class ImageSaveRequest(BaseModel):
+    """Payload for saving a preview data URI to disk."""
+    image: str = Field(..., description="data:image/*;base64,... data URI")
