@@ -25,3 +25,9 @@ try:
     router.include_router(userinfo_router, tags=["users"])
 except Exception:
     pass
+
+try:
+    from .persona import router as persona_router
+    router.include_router(persona_router, tags=["personas"])
+except Exception:
+    pass
