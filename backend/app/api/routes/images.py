@@ -1,7 +1,5 @@
 # backend/app/routes/images.py
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import List, Optional
 import html
 import os
 import httpx
@@ -9,30 +7,13 @@ import logging
 import base64
 from datetime import datetime
 
+from app.api.schemas.images import GenerateImageRequest
+
 router = APIRouter(prefix="/api", tags=["images"])
 log = logging.getLogger("images")
 
 
-# 프론트에서 오는 값을 "그대로" 받는 스키마
-class GenerateImageRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    gender: str = Field(..., min_length=1, max_length=10)
-    age: Optional[int] = None
-    options: List[str] = Field(default_factory=list)
-
-    faceShape: Optional[str] = None
-    skinTone: Optional[str] = None
-    hair: Optional[str] = None
-    eyes: Optional[str] = None
-    nose: Optional[str] = None
-    lips: Optional[str] = None
-
-    bodyType: Optional[str] = None
-    glasses: Optional[str] = None
-    personalities: Optional[List[str]] = None
-
-
-@router.post("/image/generate")
+@router.post("/images") 
 async def generate_image(payload: GenerateImageRequest):
     """
     프론트 입력을 가공 없이 AI 서비스로 전달하고,

@@ -97,7 +97,7 @@ function Home() {
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 60_000);
 
-        const res = await fetch(`${API_BASE}/api/image/generate`, {
+        const res = await fetch(`${API_BASE}/api/images`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",

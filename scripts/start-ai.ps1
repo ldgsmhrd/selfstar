@@ -41,10 +41,7 @@ try {
   # Import repo root .env into this process so GOOGLE_API_KEY is visible
   $rootEnv = Join-Path $repoRoot '.env'
   Import-DotEnv -Path $rootEnv
-  # Force Gemini model usage for AI serving
-  if (-not $env:AI_MODEL_MODULE) { $env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini" }
-  if (-not $env:AI_MODEL_FUNC) { $env:AI_MODEL_FUNC = "generate_image" }
-  # Require model presence (Gemini) on AI side; if missing, /predict returns 503
+  # Gemini-only serving; require model presence. If GOOGLE_API_KEY is missing, /predict returns 503.
   $env:AI_REQUIRE_MODEL = "1"
   if (-not $env:GOOGLE_API_KEY) { Write-Warning "[ai] GOOGLE_API_KEY not set. Gemini calls will fail with 503." }
   else { Write-Host "[ai] GOOGLE_API_KEY detected. Gemini should be ready." }

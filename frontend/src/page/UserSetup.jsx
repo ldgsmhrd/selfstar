@@ -43,8 +43,8 @@ export default function SelfStarOnboarding({ onComplete }) {
     setError(null);
     try {
       // 서버에 성별+생년월일 동시 저장
-      const res = await fetch("/user/me/profile", {
-        method: "PATCH",
+      const res = await fetch("/users/me/profile", {
+        method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         credentials: "include",
         body: JSON.stringify({ birthday: birthIso, gender }),
