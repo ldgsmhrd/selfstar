@@ -1,8 +1,8 @@
 """
-AI FastAPI application entry (under serving/fastapi_app).
-- Exposes `ai.serving.fastapi_app.main:app`
-- Loads repo .env
-- Includes routes from routes/image_model
+serving/fastapi_app 하위의 AI FastAPI 애플리케이션 엔트리입니다.
+ai.serving.fastapi_app.main:app 엔드포인트를 노출합니다.
+저장소 루트의 .env를 로드합니다.
+routes/image_model에서 라우터를 포함합니다.
 """
 from fastapi import FastAPI
 from dotenv import load_dotenv
@@ -21,9 +21,9 @@ from ai.serving.fastapi_app.routes.image_model import router as image_router
 app = FastAPI(title="SelfStar AI", version="0.1.0")
 app.include_router(image_router)
 """
-Top-level AI FastAPI application entry.
-- Mounts routers under root ('/health', '/predict').
-- Keeps the app path stable: `ai.main:app`
+최상위 AI FastAPI 애플리케이션 엔트리입니다.
+루트 경로에 라우터를 마운트합니다('/health', '/predict').
+앱 경로를 고정합니다: ai.main:app
 """
 from fastapi import FastAPI
 from dotenv import load_dotenv
