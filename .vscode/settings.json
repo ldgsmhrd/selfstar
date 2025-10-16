@@ -1,8 +1,0 @@
-{
-  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
-  "python.terminal.activateEnvironment": true,
-  // VS Code 통합 터미널에서 Node/npm을 항상 인식하도록 PATH에 포터블 Node 및 일반 설치 경로를 선행
-  "terminal.integrated.env.windows": {
-    "PATH": "C:\\Users\\pc\\Downloads\\node-portable-2019\\node-v20.19.0-win-x64;C:\\Program Files\\nodejs;${env:PATH}"
-  }
-}

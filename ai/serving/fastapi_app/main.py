@@ -1,143 +1,43 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-from typing import List, Optional
-import base64
-from io import BytesIO
-import logging
-import traceback
-import importlib
-import os
+"""
+serving/fastapi_app 하위의 AI FastAPI 애플리케이션 엔트리입니다.
+ai.serving.fastapi_app.main:app 엔드포인트를 노출합니다.
+저장소 루트의 .env를 로드합니다.
+routes/image_model에서 라우터를 포함합니다.
+"""
+from fastapi import FastAPI
 from dotenv import load_dotenv
+import os
+import sys
 
-try:
-    from PIL import Image, ImageDraw, ImageFont
-except Exception:
-    Image = None  # type: ignore
+# Ensure repo root .env is visible
+_THIS = os.path.dirname(__file__)
+_ROOT = os.path.abspath(os.path.join(_THIS, "..", "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+load_dotenv(dotenv_path=os.path.join(_ROOT, ".env"), override=True)
 
-app = FastAPI(title="AI Serving Minimal", version="0.0.1")
-log = logging.getLogger("ai-serving")
-logging.basicConfig(level=logging.INFO)
+from ai.serving.fastapi_app.routes.image_model import router as image_router
 
-# 사용법:
-#  - 기본 로컬 데모: 내장 Pillow 생성기 사용(환경변수 미설정)
-#  - Gemini 사용:
-#      setx GOOGLE_API_KEY "<your_key>"
-#      setx AI_MODEL_MODULE "ai.models.imagemodel_gemini"
-#      setx AI_MODEL_FUNC "generate_image"
-#    재기동 후 /predict 호출 시 Gemini가 이미지 생성
+app = FastAPI(title="SelfStar AI", version="0.1.0")
+app.include_router(image_router)
+"""
+최상위 AI FastAPI 애플리케이션 엔트리입니다.
+루트 경로에 라우터를 마운트합니다('/health', '/predict').
+앱 경로를 고정합니다: ai.main:app
+"""
+from fastapi import FastAPI
+from dotenv import load_dotenv
+import os
+import sys
 
-# Load .env from repo root (../../.. from this file)
-_ENV_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.env"))
-try:
-    load_dotenv(dotenv_path=_ENV_PATH, override=False)
-    log.info(f"Loaded .env from {_ENV_PATH}")
-except Exception as _e:
-    log.warning(f".env load failed: {_e}")
+# Ensure repo root .env is visible
+_THIS = os.path.dirname(__file__)
+_ROOT = os.path.abspath(os.path.join(_THIS, ".."))
+if _ROOT not in sys.path:
+	sys.path.insert(0, _ROOT)
+load_dotenv(dotenv_path=os.path.join(_ROOT, ".env"), override=True)
 
-@app.get("/health")
-def health():
-    return {"status": "ok", "service": "ai-serving"}
+from ai.serving.fastapi_app.routes.image_model import router as image_router
 
-# Run dev server example (from repo root):
-#   python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
-
-
-class PredictRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
-    gender: str = Field(..., min_length=1, max_length=10)
-    feature: Optional[str] = Field(None, max_length=200)
-    options: List[str] = Field(default_factory=list)
-
-
-def _dynamic_model():
-    """환경변수로 지정된 모델을 동적으로 임포트하여 함수 핸들을 반환합니다."""
-    module_name = os.getenv("AI_MODEL_MODULE", "ai.models.imagemodel_gemini")
-    func_name = os.getenv("AI_MODEL_FUNC", "generate_image")
-    try:
-        mod = importlib.import_module(module_name)
-        fn = getattr(mod, func_name)
-        if callable(fn):
-            log.info(f"Loaded model function: {module_name}.{func_name}")
-            return fn
-        log.warning(f"Function not callable: {module_name}.{func_name}")
-    except Exception as e:
-        log.warning(f"Dynamic model import failed: {e}")
-    return None
-
-
-MODEL_FN = _dynamic_model()
-
-
-@app.post("/predict")
-def predict(req: PredictRequest):
-    try:
-        if Image is None:
-            raise RuntimeError("Pillow not installed. Install ai/requirements.txt (needs Pillow).")
-
-        # 동적 모델이 있으면 우선 사용
-        if callable(MODEL_FN):
-            try:
-                result = MODEL_FN(req.name, req.gender, req.feature, req.options)
-                if isinstance(result, Image.Image):
-                    buf = BytesIO(); result.save(buf, format="PNG")
-                    data = base64.b64encode(buf.getvalue()).decode("ascii")
-                    return {"ok": True, "image": f"data:image/png;base64,{data}"}
-                elif isinstance(result, (bytes, bytearray)):
-                    data = base64.b64encode(result).decode("ascii")
-                    return {"ok": True, "image": f"data:image/png;base64,{data}"}
-                else:
-                    log.warning("MODEL_FN returned unsupported type; falling back to built-in generator")
-            except Exception as e:
-                log.error("Model function error: %s", e)
-
-        img = Image.new("RGB", (640, 640), (15, 23, 42))
-        draw = ImageDraw.Draw(img)
-
-        # Robust font loader: prefer a Unicode-capable font (Korean supported) on Windows
-        def load_font(size: int = 24):
-            candidates = [
-                # Common Windows fonts (Korean)
-                "C:/Windows/Fonts/malgun.ttf",  # Malgun Gothic
-                "C:/Windows/Fonts/malgunbd.ttf",
-                # Arial Unicode MS (if available)
-                "C:/Windows/Fonts/arialuni.ttf",
-                # Fallback to Arial
-                "C:/Windows/Fonts/arial.ttf",
-                "arial.ttf",
-            ]
-            for path in candidates:
-                try:
-                    return ImageFont.truetype(path, size)
-                except Exception:
-                    continue
-            # Final fallback: default bitmap font (ASCII). We'll sanitize text if needed.
-            return ImageFont.load_default()
-
-        font = load_font(24)
-
-        # Safely draw text that may contain non-ASCII characters even with limited fonts
-        def safe_text(xy, text: str, fill, font):
-            try:
-                draw.text(xy, text, fill=fill, font=font)
-            except Exception:
-                # As a last resort, strip non-ASCII to avoid crashes
-                ascii_text = text.encode("ascii", "ignore").decode("ascii")
-                draw.text(xy, ascii_text, fill=fill, font=font)
-
-        y = 40
-        safe_text((32, y), "SelfStar.AI - Image Model", fill=(255,255,255), font=font); y += 40
-        safe_text((32, y), f"이름: {req.name}", fill=(200, 230, 255), font=font); y += 32
-        safe_text((32, y), f"성별: {req.gender}", fill=(200, 230, 255), font=font); y += 32
-        safe_text((32, y), f"특징: {req.feature or '-'}", fill=(200, 230, 255), font=font); y += 32
-        safe_text((32, y), f"옵션: {', '.join(req.options) or '(none)'}", fill=(200, 230, 255), font=font)
-
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        data = base64.b64encode(buf.getvalue()).decode("ascii")
-        return {"ok": True, "image": f"data:image/png;base64,{data}"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error("/predict failed: %s\n%s", e, traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"predict_failed: {e}")
-
+app = FastAPI(title="SelfStar AI", version="0.1.0")
+app.include_router(image_router)

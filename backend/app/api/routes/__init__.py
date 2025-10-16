@@ -19,3 +19,9 @@ try:
     router.include_router(images_router)
 except Exception:
     pass
+
+try:
+    from .userdata import router as userinfo_router
+    router.include_router(userinfo_router, tags=["users"])
+except Exception:
+    pass

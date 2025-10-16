@@ -79,13 +79,17 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 주요 라우트
 - GET /health
-- POST /api/image/generate → { ok, image: dataURI, url?: /media/xxx.png }
+- POST /api/images → { ok, image: dataURI, url?: /media/xxx.png }
 	- AI로 위임 성공 시 data URI를 디코드해 파일 저장 후 url도 함께 반환
 - 정적 /media → 이미지 파일 제공
+ - GET /auth/me → 세션 사용자(동의 필요 여부 포함: needs_consent)
+ - PUT /users/me/profile → 세션 사용자의 성별+생년월일 동시 저장
+ - GET /__routes → 등록된 경로 목록 문자열 배열(디버그)
 
 참고
 - `app/main.py`에서 /media를 StaticFiles로 마운트합니다.
 - `app/api/routes/images.py`에서 저장 경로와 URL을 동기화했습니다.
+ - `app/api/routes/userdata.py`에서 세션 사용자 프로필을 업데이트합니다.
 
 참고: 현재 코드에서 aiomysql/SQLAlchemy를 사용합니다. 만약 실행 시 해당 모듈이 없다는 에러가 나면 아래로 설치 후, 필요 시 `requirements.txt`에 반영하세요.
 ```powershell
@@ -160,13 +164,23 @@ python -m app
 	- `GET /` (posts 라우터 기준) → posts 라우트 작동 확인
 
 ### 이미지 생성 위임 API
-- `POST /api/image/generate`
+- `POST /api/images`
   - 요청: `{ name, gender, feature?, options[] }`
   - 동작: `.env`의 `AI_SERVICE_URL`이 설정되면 AI 서버의 `/predict`로 위임하여 data URL을 반환합니다.
   - 미설정/장애 시: 로컬 SVG data URL을 생성하여 반환하는 안전한 폴백을 수행합니다.
 
 주의: `/health` 엔드포인트는 현재 기본 앱에 포함되어 있지 않습니다. 필요하면 `app/main.py`에 간단히 추가하세요.
 → 현재 저장소에는 `/health`가 구현되어 있어 테스트가 통과합니다.
+
+### 사용자 프로필 API
+- `PUT /users/me/profile`
+	- 요청: `{ birthday: "YYYY-MM-DD", gender: "남성" | "여성" }`
+	- 응답: `{ ok: true, user: { id, birthday, gender } }`
+	- 세션 쿠키 필요(Vite 프록시 `/users` 권장)
+
+검증/예외
+- 생년월일은 미래 불가, 연도 1900 미만 불가
+- 성별은 "남성" 또는 "여성"만 허용
 
 ## CORS/세션 동작
 - CORS: `STRICT_CORS=1` 이면 `FRONTEND_URL`만 허용, 아니면 `*` 허용

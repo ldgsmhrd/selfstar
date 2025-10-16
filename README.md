@@ -19,19 +19,32 @@ SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
 - Backend: 8000
 - Frontend (Vite): 5174
 
+빠른 시작(Windows PowerShell)
+- 전체 실행: `scripts/start-all.ps1`
+- 개별 실행: `scripts/start-backend.ps1`, `scripts/start-frontend.ps1`, `scripts/start-ai.ps1`
+- 헬스 체크: `scripts/check-health.ps1`
+- 이미지 생성 테스트: `scripts/test-generate.ps1`
+
+예시
+```powershell
+& .\scripts\start-all.ps1
+# 백엔드:8000, AI:8600, 프론트:5174 동시에 기동
+```
+
 레포 구조(요약)
 ```
 ai/
-  serving/fastapi_app/main.py    # AI FastAPI 서버 (uvicorn으로 8600)
-  models/imagemodel_gemini.py    # Gemini 이미지 모델 호출
+  serving/fastapi_app/main.py           # FastAPI 앱 엔트리 (라우터 장착)
+  serving/fastapi_app/routes/image_model.py    # 이미지 생성 라우터 (Gemini 고정)
   requirements.txt               # AI 의존성
 backend/
   app/main.py                    # Backend FastAPI 엔트리(8000)
-  app/api/routes/images.py       # /api/image/generate -> AI에 위임 후 /media 저장
+  app/api/routes/images.py       # /api/images -> AI에 위임 후 /media 저장
+  app/api/routes/userdata.py     # /users/me/profile (세션 사용자 프로필 업데이트)
   requirements.txt               # Backend 의존성
 frontend/
   src/page/App.jsx               # 메인 화면: 이미지 생성/표시
-  vite.config.js                 # /auth, /api, /media 프록시 → :8000
+  vite.config.js                 # /auth, /api, /media, /user 프록시 → :8000 (세션 쿠키 유지)
 ```
 
 설치 및 실행 (Windows, PowerShell)
@@ -44,8 +57,6 @@ pip install -r requirements.txt
 
 # 환경 변수 (PowerShell):
 $env:GOOGLE_API_KEY = "<YOUR_API_KEY>"
-$env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini"
-$env:AI_MODEL_FUNC   = "generate_image"
 $env:AI_REQUIRE_MODEL = "true"  # 제미나이 강제, 폴백 금지
 
 python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
@@ -70,7 +81,7 @@ $env:SESSION_SECRET = "selfstar-secret"
 
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 # Health: http://localhost:8000/health
-# 이미지 생성(프록시): POST http://localhost:8000/api/image/generate
+# 이미지 생성(프록시): POST http://localhost:8000/api/images
 # 저장된 파일: http://localhost:8000/media/<파일명>
 ```
 
@@ -83,7 +94,7 @@ npm run dev
 ```
 
 동작 원리 (이미지 생성 흐름)
-1) 프론트: /api/image/generate 요청 → 백엔드
+1) 프론트: /api/images 요청 → 백엔드
 2) 백엔드: AI 서버(/predict)에 위임
 3) AI: 제미나이 호출 → 이미지 바이트 확보 후 PNG로 표준화하여 data URI 반환
 4) 백엔드: data URI를 디코드해 app/media에 저장하고 "url"(예: /media/xxx.png)과 함께 응답
@@ -91,8 +102,7 @@ npm run dev
 
 중요 환경 변수
 - GOOGLE_API_KEY: Gemini API Key
-- AI_MODEL_MODULE, AI_MODEL_FUNC: 동적 모델 로딩(기본: 제미나이)
-- AI_REQUIRE_MODEL=true: 폴백 비활성화(모델 필수)
+- AI는 Gemini 모델만 사용합니다. AI_REQUIRE_MODEL=true로 모델 필수 모드 유지
 - AI_SERVICE_URL: 백엔드가 위임할 AI 서버 URL
 - BACKEND_URL, FRONTEND_URL: CORS/리다이렉트 등에 사용
 - MEDIA_ROOT: 백엔드에서 이미지 저장 디렉터리(기본: backend/app/media)
@@ -106,14 +116,14 @@ npm run dev
   ```
 - 제미나이 키 누락: AI 서버 로그에 GOOGLE_API_KEY 경고 → 환경 변수 확인
 - 프론트에서 이미지가 안 보일 때:
-  - /api/image/generate 응답에 "url" 포함 여부 확인
+  - /api/images 응답에 "url" 포함 여부 확인
   - /media/xxx.png 요청이 200인지 확인
   - 백엔드 /media 마운트가 올바른지(backend/app/main.py)와 저장 경로 일치 여부(images.py)를 확인
 
 테스트
 ```powershell
 $body = '{"name":"이빛나","gender":"여","feature":"귀여운 이미지","options":["안경"]}'
-Invoke-RestMethod -Uri http://localhost:8000/api/image/generate -Method POST -Headers @{'Content-Type'='application/json'} -Body $body | ConvertTo-Json -Depth 3
+Invoke-RestMethod -Uri http://localhost:8000/api/images -Method POST -Headers @{'Content-Type'='application/json'} -Body $body | ConvertTo-Json -Depth 3
 ```
 
 PR/커밋 규칙(예시)
@@ -215,8 +225,7 @@ Gemini 기반의 이미지 생성 모델을 FastAPI로 서빙합니다. 동적 �
 
 - 환경변수
   - `GOOGLE_API_KEY` (필수): Google Generative AI API 키
-  - `AI_MODEL_MODULE` (선택, 기본 `ai.models.imagemodel_gemini`)
-  - `AI_MODEL_FUNC` (선택, 기본 `generate_image`)
+  - 모델은 고정(Gemini)이며 별도 선택 옵션 없음
   - `GEMINI_IMAGE_MODEL` (선택, 기본 `gemini-2.5-flash-image-preview`)
 
 - 실행 방법 (권장 포트: 8600)
@@ -229,7 +238,7 @@ Gemini 기반의 이미지 생성 모델을 FastAPI로 서빙합니다. 동적 �
     - 영구(새 세션부터 적용): ` setx GOOGLE_API_KEY "<YOUR_KEY>" `
     - 선택적으로 동적 모델 지정:
       ```powershell
-      $env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini"; $env:AI_MODEL_FUNC = "generate_image"
+  # Gemini 고정: 별도 설정 불필요
       ```
   - 개발 서버 실행
     ```powershell
@@ -260,10 +269,10 @@ bash start_vllm.sh
 ```
 
 ### 백엔드 연동 (프록시 역할)
-백엔드는 `AI_SERVICE_URL`이 설정되면 `/api/image/generate` 요청을 AI 서버의 `/predict`로 위임합니다.
+백엔드는 `AI_SERVICE_URL`이 설정되면 `/api/images` 요청을 AI 서버의 `/predict`로 위임합니다.
 
 - 예: `AI_SERVICE_URL=http://localhost:8600`
-- 엔드포인트: `POST /api/image/generate` → `{ ok: true, image: "data:..." }`
+- 엔드포인트: `POST /api/images` → `{ ok: true, image: "data:..." }`
 
 ---
 
@@ -273,7 +282,7 @@ bash start_vllm.sh
   - `POST http://localhost:8600/predict` → 200, data URL 포함
 2) 백엔드 기동 (`http://localhost:8000`)
   - `.env`에 `AI_SERVICE_URL=http://localhost:8600` 설정
-  - `POST http://localhost:8000/api/image/generate` → 200, data URL 포함
+  - `POST http://localhost:8000/api/images` → 200, data URL 포함
 3) 프론트엔드 기동 (`http://localhost:5174`)
   - 이미지 생성 UI/호출이 있다면 결과 표시 확인
 
@@ -286,6 +295,21 @@ bash start_vllm.sh
 - 백엔드/프론트엔드 모두 환경변수 예시 파일 제공 (`.env.example`)
 - 각 서비스별 README에 상세 실행법, 환경설정, 폴더 구조 예시 포함
 - AI 폴더는 추후 모델/서빙/MLflow/vLLM 등 확장 예정
+
+### 인증 · 온보딩 흐름(Consent → UserSetup)
+1) OAuth 로그인(카카오/구글/네이버) 완료 시 서버 세션에 `user_id` 저장
+2) `GET /auth/me` 응답에 `needs_consent` 노출(생일 미설정 또는 신규 가입 등)
+3) 프론트는 `/consent` → `/setup`으로 유도하여 프로필 정보 수집
+4) `UserSetup`에서 성별+생년월일을 동시 저장: `PUT /users/me/profile`
+  - Vite 프록시 `/users` 경유로 세션 쿠키 포함 호출
+  - 성공 시 `/imgcreate`로 이동
+
+주요 엔드포인트(세션 필요)
+- `GET /auth/me` → `{ ok, authenticated, user: { id, needs_consent, ... } }`
+- `PUT /users/me/profile` → `{ ok, user: { id, birthday, gender } }`
+
+디버깅
+- `GET /__routes` → 등록된 경로 문자열 배열(개발용 도우미)
 
 ---
 

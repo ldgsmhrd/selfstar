@@ -4,8 +4,8 @@ FastAPI 기반 최소 서빙으로, Google Gemini 이미지 모델을 호출해 
 
 구성 요약
 ```
-serving/fastapi_app/main.py    # FastAPI 엔트리 (/health, /predict)
-models/imagemodel_gemini.py    # Gemini 호출 및 PNG 표준화
+serving/fastapi_app/main.py           # FastAPI 앱 엔트리 (라우터 장착)
+serving/fastapi_app/routes/image_model.py    # 이미지 생성 라우터 (/health, /predict, Gemini 고정)
 requirements.txt               # 서빙 의존성
 ```
 
@@ -24,8 +24,6 @@ pip install -r requirements.txt
 환경 변수(예시)
 ```powershell
 $env:GOOGLE_API_KEY = "<YOUR_API_KEY>"
-$env:AI_MODEL_MODULE = "ai.models.imagemodel_gemini"
-$env:AI_MODEL_FUNC   = "generate_image"
 $env:AI_REQUIRE_MODEL = "true"
 ```
 
@@ -33,6 +31,10 @@ $env:AI_REQUIRE_MODEL = "true"
 ```powershell
 python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
 # Health: http://localhost:8600/health
+```
+또는 루트 스크립트 사용
+```powershell
+& ..\scripts\start-ai.ps1
 ```
 
 API
@@ -42,3 +44,6 @@ API
 
 비고
 - 응답 이미지는 Pillow로 검증·재인코딩되어 브라우저에서 바로 표시 가능한 PNG입니다.
+ - Pillow 미설치 시 폴백 이미지는 비활성일 수 있습니다. 개발 편의를 위해 설치 권장.
+ - .env 파일은 리포지토리 루트에 위치하면 자동으로 로드됩니다.
+ - 백엔드가 `AI_SERVICE_URL`로 이 서버를 호출하여 `/api/image/generate`를 제공합니다.
