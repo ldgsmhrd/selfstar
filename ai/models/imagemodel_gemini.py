@@ -167,12 +167,3 @@ def generate_image_from_payload(payload: Dict[str, Any]):
     raise RuntimeError("응답에서 이미지 데이터를 찾지 못했습니다.")
 
 
-# (하위호환) 기존 시그니처를 쓰는 곳이 남아있다면 그대로 유지하고 내부에서 변환
-def generate_image(name: str, gender: str, feature: Optional[str], options: List[str]):
-    payload: Dict[str, Any] = {
-        "name": name,
-        "gender": gender,
-        "feature": feature,
-        "options": options or [],
-    }
-    return generate_image_from_payload(payload)

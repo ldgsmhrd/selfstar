@@ -1,5 +1,5 @@
 param(
-  [string]$Url = "http://localhost:8000/api/image/generate"
+  [string]$Url = "http://localhost:8000/api/images"
 )
 
 Write-Host "Testing POST $Url" -ForegroundColor Cyan

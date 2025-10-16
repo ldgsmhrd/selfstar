@@ -79,12 +79,11 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 주요 라우트
 - GET /health
-- POST /api/image/generate → { ok, image: dataURI, url?: /media/xxx.png }
+- POST /api/images → { ok, image: dataURI, url?: /media/xxx.png }
 	- AI로 위임 성공 시 data URI를 디코드해 파일 저장 후 url도 함께 반환
 - 정적 /media → 이미지 파일 제공
  - GET /auth/me → 세션 사용자(동의 필요 여부 포함: needs_consent)
- - PATCH /user/me/profile → 세션 사용자의 성별+생년월일 동시 저장
- - PATCH /user/me/birthday → 세션 사용자의 생년월일 저장(호환성 유지)
+ - PUT /users/me/profile → 세션 사용자의 성별+생년월일 동시 저장
  - GET /__routes → 등록된 경로 목록 문자열 배열(디버그)
 
 참고
@@ -165,7 +164,7 @@ python -m app
 	- `GET /` (posts 라우터 기준) → posts 라우트 작동 확인
 
 ### 이미지 생성 위임 API
-- `POST /api/image/generate`
+- `POST /api/images`
   - 요청: `{ name, gender, feature?, options[] }`
   - 동작: `.env`의 `AI_SERVICE_URL`이 설정되면 AI 서버의 `/predict`로 위임하여 data URL을 반환합니다.
   - 미설정/장애 시: 로컬 SVG data URL을 생성하여 반환하는 안전한 폴백을 수행합니다.
@@ -174,13 +173,10 @@ python -m app
 → 현재 저장소에는 `/health`가 구현되어 있어 테스트가 통과합니다.
 
 ### 사용자 프로필 API
-- `PATCH /user/me/profile`
+- `PUT /users/me/profile`
 	- 요청: `{ birthday: "YYYY-MM-DD", gender: "남성" | "여성" }`
 	- 응답: `{ ok: true, user: { id, birthday, gender } }`
-	- 세션 쿠키 필요(Vite 프록시 `/user` 권장)
-- `PATCH /user/me/birthday`
-	- 요청: `{ birthday: "YYYY-MM-DD" }`
-	- 응답: `{ ok: true, user: { id, birthday } }`
+	- 세션 쿠키 필요(Vite 프록시 `/users` 권장)
 
 검증/예외
 - 생년월일은 미래 불가, 연도 1900 미만 불가

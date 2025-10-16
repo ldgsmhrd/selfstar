@@ -1,7 +1,4 @@
 from fastapi import APIRouter
-import logging
-
-log = logging.getLogger("api.routes")
 
 router = APIRouter()
 
@@ -23,15 +20,14 @@ try:
 except Exception:
     pass
 
-added_userinfo = False
-for modname in (".유저정보데이터", ".userdata"):
-    try:
-        userinfo_router = __import__(__name__ + modname, fromlist=["router"]).router  # type: ignore
-        router.include_router(userinfo_router, tags=["users"])
-        log.info(f"registered userinfo router from {modname}")
-        added_userinfo = True
-        break
-    except Exception as e:
-        log.warning(f"failed to register userinfo router from {modname}: {e}")
-if not added_userinfo:
-    log.error("no userinfo router registered; /user/me/birthday will 404")
+try:
+    from .userdata import router as userinfo_router
+    router.include_router(userinfo_router, tags=["users"])
+except Exception:
+    pass
+
+try:
+    from .persona import router as persona_router
+    router.include_router(persona_router, tags=["personas"])
+except Exception:
+    pass

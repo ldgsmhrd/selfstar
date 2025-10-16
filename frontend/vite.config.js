@@ -15,8 +15,9 @@ export default defineConfig({
     proxy: {
       '/auth': { target: 'http://localhost:8000', changeOrigin: true, secure: false },
       '/api':  { target: 'http://localhost:8000', changeOrigin: true, secure: false },
-      '/user': { target: 'http://localhost:8000', changeOrigin: true, secure: false },
+      '/user': { target: 'http://localhost:8000', changeOrigin: true, secure: false }, // legacy
+      '/personas': { target: 'http://localhost:8000', changeOrigin: true, secure: false },
       '/media':{ target: 'http://localhost:8000', changeOrigin: true, secure: false },
     },
   },
-})
+}) 

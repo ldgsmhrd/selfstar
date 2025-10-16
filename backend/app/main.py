@@ -122,8 +122,9 @@ except Exception as e:
     logger.warning(f"No api_router found in app.api.routes: {e}")
 
 # ===== Static media (/media) =====
-# 이미지 저장 경로를 앱 폴더 내부 media/로 설정 (환경변수 MEDIA_ROOT로 오버라이드 가능)
-MEDIA_ROOT = os.getenv("MEDIA_ROOT") or os.path.join(os.path.dirname(__file__), "media")
+# 기본 저장 경로를 앱 폴더 내부 media/로 설정 (환경변수 MEDIA_ROOT로 오버라이드 가능)
+_DEFAULT_MEDIA = os.path.join(os.path.dirname(__file__), "media")
+MEDIA_ROOT = os.getenv("MEDIA_ROOT") or _DEFAULT_MEDIA
 try:
     os.makedirs(MEDIA_ROOT, exist_ok=True)
 except Exception as _e:
