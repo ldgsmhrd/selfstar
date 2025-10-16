@@ -1,13 +1,14 @@
 // App.jsx
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Routes, Route, NavLink, Link } from "react-router-dom";
+import { Routes, Route, NavLink, Link, useNavigate } from "react-router-dom";
 import Signup from "./Signup.jsx";
 import Imgcreate from "./Imgcreate.jsx";
 import MyPage from "./MyPage.jsx";
 import Footer from "../../components/Footer.jsx";
 import ConsentPage from "./ConsentPage.jsx";
 import UserSetup from "./UserSetup.jsx";
-// import Chat from "./Chat.jsx";
+import Chat from "./Chat.jsx";
+import ProfileSelect from "./ProfileSelect.jsx";
 
 const base = "px-3 py-1.5 rounded-full transition";
 const active = "bg-blue-600 text-white shadow";
@@ -203,6 +204,28 @@ function Home({ onStart }) {
 export default function App() {
   const { user, logout } = useAuth();
   // 모달 대신 /signup 라우트로 이동하므로 관련 상태 제거
+  const navigate = useNavigate();
+
+  // Chat 진입 모달 상태
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showImgcreateModal, setShowImgcreateModal] = useState(false);
+
+  const openChatFlow = (e) => {
+    e.preventDefault();
+    setShowProfileModal(true);
+  };
+
+  const onProfileChosen = (name) => {
+    setShowProfileModal(false);
+    // 선택된 프로필이 있을 때만 Chat으로 이동
+    navigate("/chat", { state: { profileName: name } });
+  };
+
+  const onAddProfileClick = () => {
+    // 프로필 추가 클릭 시 Imgcreate를 모달로
+    setShowProfileModal(false);
+    setShowImgcreateModal(true);
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_40%,#f7f7fb_100%)] text-slate-900">
@@ -216,7 +239,7 @@ export default function App() {
           </div>
           <nav className="hidden md:flex items-center gap-5 md:gap-7 text-sm font-semibold ml-36">
             <NavLink to="/" end className={({ isActive }) => `${base} ${isActive ? active : idle}`}>홈</NavLink>
-            <NavLink to="/chat" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>채팅</NavLink>
+            <a href="/chat" onClick={openChatFlow} className={`${base} ${idle}`}>채팅</a>
             <NavLink to="/mypage" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>마이페이지</NavLink>
             <NavLink to="/alerts" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>알림</NavLink>
           </nav>
@@ -249,7 +272,9 @@ export default function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/consent" element={<ConsentPage />} />
           <Route path="/setup" element={<UserSetup />} />
+          {/* Imgcreate는 모달로도 띄우지만, 라우트 직접 접근도 허용 */}
           <Route path="/imgcreate" element={<Imgcreate />} />
+          <Route path="/chat" element={<Chat />} />
           <Route
             path="/mypage"
             element={
@@ -261,6 +286,48 @@ export default function App() {
           <Route path="/alerts" element={<Alerts />} />
         </Routes>
       </main>
+
+      {/* ProfileSelect 모달: 헤더에서 채팅 클릭 시 */}
+      {showProfileModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}
+          onClick={() => setShowProfileModal(false)}
+        >
+          <div style={{ position: "relative", width: "min(1200px, 96vw)", maxHeight: "96dvh", overflow: "auto", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+            <button
+              aria-label="닫기"
+              onClick={() => setShowProfileModal(false)}
+              style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}
+            >
+              ×
+            </button>
+            <ProfileSelect maxSlots={4} onProfileChosen={onProfileChosen} onAddProfileClick={onAddProfileClick} />
+          </div>
+        </div>
+      )}
+
+      {/* Imgcreate 모달: 프로필 추가를 눌렀을 때 */}
+      {showImgcreateModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}
+          onClick={() => setShowImgcreateModal(false)}
+        >
+          <div style={{ position: "relative", width: "min(1200px, 96vw)", maxHeight: "96dvh", overflow: "auto", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+            <button
+              aria-label="닫기"
+              onClick={() => setShowImgcreateModal(false)}
+              style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}
+            >
+              ×
+            </button>
+            <Imgcreate compact />
+          </div>
+        </div>
+      )}
 
       <Footer />
     </div>

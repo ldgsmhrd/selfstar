@@ -7,7 +7,7 @@ import Field from "../components/Field";
 import StyleTag from "../components/StyleTag";
 
 /* ========================= Home ========================= */
-function Home() {
+function Home({ compact = false }) {
   // 기본 필드
   const [name, setName] = useState("이빛나");
   const [gender, setGender] = useState("여");
@@ -48,6 +48,12 @@ function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("");
+
+  // 확정 버튼 활성화 여부: 인플루언서 정보(이름/성별/나이/안경) + 얼굴 디테일(6종) 모두 선택 시에만 활성화
+  const isInfoReady = Boolean(String(name || "").trim()) && Boolean(gender) && Boolean(age) && Boolean(glasses);
+  const isFaceReady = Boolean(faceShape) && Boolean(skinTone) && Boolean(hair) && Boolean(eyes) && Boolean(nose) && Boolean(lips);
+  const isBodyReady = Boolean(bodyType) && (Array.isArray(personalities) && personalities.length > 0);
+  const isConfirmReady = isInfoReady && isFaceReady && isBodyReady;
 
   // 공통 Select
   const Select = ({ value, onChange, children }) => (
@@ -134,7 +140,7 @@ function Home() {
     <>
       <StyleTag />
 
-      <main className="mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen">
+  <main className={compact ? "mx-auto max-w-6xl p-4" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch">
           {/* 좌측 미리보기 카드 */}
           <section className="card overflow-hidden h-full">
@@ -338,14 +344,14 @@ function Home() {
                 onClick={onGenerate}
                 disabled={loading}
               >
-                미리보기
+                이미지 생성
               </button>
               <button
-                className={`btn-primary ${loading ? "opacity-60 cursor-not-allowed" : ""}`}
+                className={`${isConfirmReady ? "btn-primary" : "btn-outline"} ${(loading || !isConfirmReady) ? "opacity-60 cursor-not-allowed" : ""}`}
                 onClick={onGenerate}
-                disabled={loading}
+                disabled={loading || !isConfirmReady}
               >
-                {loading ? "생성중…" : "인플루언서 확정"}
+                {loading ? "생성중…" : "이미지 확정"}
               </button>
             </div>
 

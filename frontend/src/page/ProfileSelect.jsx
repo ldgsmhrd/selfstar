@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+ import React, { useMemo, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
 /**
@@ -7,7 +7,7 @@ import { useNavigate, Link } from "react-router-dom";
  * Props (optional):
  * - maxSlots?: number                        // 기본 4
  */
-export default function ProfileSelect({ maxSlots = 4 }) {
+export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick }) {
   const navigate = useNavigate();
   // 내부 모델: { type: "profile" | "add", name?: string }
   const [tiles, setTiles] = useState(() => {
@@ -46,15 +46,23 @@ export default function ProfileSelect({ maxSlots = 4 }) {
     });
     setSelectedIndex(editingIndex);
     closeModal();
-    // 프로필 생성 후 바로 이미지 생성 페이지로 이동
-    navigate("/imgcreate", { state: { profileName: name } });
+    // 프로필 생성 후 동작: 콜백 우선, 없으면 기존 네비게이션
+    if (typeof onProfileChosen === "function") {
+      onProfileChosen(name);
+    } else {
+      navigate("/imgcreate", { state: { profileName: name } });
+    }
   };
 
   const selectTile = (idx) => {
     const t = tiles[idx];
     if (t.type === "add") {
-      // 프로필 추가 버튼 클릭 시 즉시 이미지 생성 페이지로 이동
-      navigate("/imgcreate", { state: { profileName: null, intent: "create-profile" } });
+      // 프로필 추가: 콜백 우선, 없으면 기존 네비게이션
+      if (typeof onAddProfileClick === "function") {
+        onAddProfileClick();
+      } else {
+        navigate("/imgcreate", { state: { profileName: null, intent: "create-profile" } });
+      }
     } else if (t.type === "profile") {
       setSelectedIndex(idx);
     } else {
@@ -64,9 +72,13 @@ export default function ProfileSelect({ maxSlots = 4 }) {
 
   const handleStart = () => {
     if (!canStart) return;
-    // 선택된 프로필 이름을 다음 페이지로 전달해서 context나 상태 저장 가능
+    // 선택된 프로필 확정: 콜백 우선, 없으면 기존 네비게이션
     const name = tiles[selectedIndex].name;
-    navigate("/imgcreate", { state: { profileName: name } });
+    if (typeof onProfileChosen === "function") {
+      onProfileChosen(name);
+    } else {
+      navigate("/imgcreate", { state: { profileName: name } });
+    }
   };
 
   return (
@@ -155,7 +167,14 @@ export default function ProfileSelect({ maxSlots = 4 }) {
           aria-modal="true"
           aria-labelledby="mk-title"
         >
-          <div className="modal">
+          <div className="modal" style={{ position: "relative" }}>
+            <button
+              aria-label="닫기"
+              onClick={closeModal}
+              style={{ position: "absolute", top: 10, right: 12, width: 32, height: 32, borderRadius: 999, border: "1px solid #dbe9ff", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 16, fontWeight: 800, color: "#334155" }}
+            >
+              ×
+            </button>
             <h2 id="mk-title">프로필을 생성하시겠습니까?</h2>
             <p className="mk-sub">이름을 입력하면 새로운 인플루언서 캐릭터가 만들어집니다.</p>
             <label className="mk-field">
