@@ -54,16 +54,17 @@ export default function AuthScreen() {
     // 실제 OAuth 시작 엔드포인트로 이동
     // 현재 탭 상태를 intent로 저장하여 콜백 후 홈('/')에 도착해도 의도에 따라 클라이언트에서 보정
   try { localStorage.setItem("oauth_intent", tab); } catch { /* ignore */ }
+  const apiBase = (import.meta?.env?.VITE_API_BASE || "http://localhost:8000").replace(/\/$/, "");
     if (provider === "kakao") {
-      window.location.href = "/auth/kakao"; // alias to /auth/kakao/login
+      window.location.href = apiBase ? `${apiBase}/auth/kakao` : "/auth/kakao"; // alias to /auth/kakao/login
       return;
     }
     if (provider === "google") {
-      window.location.href = "/auth/google"; // alias to /auth/google/login
+      window.location.href = apiBase ? `${apiBase}/auth/google` : "/auth/google"; // alias to /auth/google/login
       return;
     }
     if (provider === "naver") {
-      window.location.href = "/auth/naver"; // alias to /auth/naver/login
+      window.location.href = apiBase ? `${apiBase}/auth/naver` : "/auth/naver"; // alias to /auth/naver/login
       return;
     }
   };

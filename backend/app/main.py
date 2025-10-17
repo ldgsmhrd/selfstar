@@ -18,10 +18,12 @@ from app.core.logging import get_logger
 from app.schemas.health import HealthResponse
 from urllib.parse import urlparse
 
-# .env 파일 로드 순서 (항상 리포지토리 루트의 .env를 우선)
+# .env 파일 로드 순서 (컨테이너/로컬 모두에서 동작)
+# - 앱 디렉터리: /app/app
+# - 리포지토리 루트(컨테이너 기준): /app
 _APP_DIR = os.path.dirname(__file__)
-_REPO_ROOT = os.path.abspath(os.path.join(_APP_DIR, "..", ".."))
-_ROOT_ENV = os.path.join(_REPO_ROOT, ".env")
+_REPO_ROOT = os.path.abspath(os.path.join(_APP_DIR, ".."))  # /app/app -> /app
+_ROOT_ENV = os.path.join(_REPO_ROOT, ".env")  # /app/.env
 
 # 1) 리포지토리 루트 .env (최우선)
 load_dotenv(dotenv_path=_ROOT_ENV, override=True)
@@ -33,25 +35,26 @@ logger = get_logger("env_loader")
 
 # (디버그) 프로젝트 루트의 .env 파일 경로와 내용을 로그로 출력
 logger.info("리포지토리 루트 .env 파일을 불러오는 중…")
-try:
-    with open(_ROOT_ENV, "r", encoding="utf-8") as env_file:
-        logger.info("루트 .env 파일 내용:\n" + env_file.read())
-except FileNotFoundError:
-    logger.error(f"루트 .env 파일({_ROOT_ENV})을 찾지 못했습니다.")
-except UnicodeDecodeError as e:
-    logger.error(f"인코딩 문제로 .env 파일을 읽지 못했습니다: {e}")
+if not os.path.exists(_ROOT_ENV):
+    logger.warning(f"루트 .env 파일({_ROOT_ENV})을 찾지 못했습니다. compose/env_file 또는 환경변수를 사용 중일 수 있습니다.")
 
 # 주요 환경변수 로깅
-logger.info(f"KAKAO_CLIENT_ID: {os.getenv('KAKAO_CLIENT_ID')}")
+logger.info(f"KAKAO_CLIENT_ID set: {'yes' if os.getenv('KAKAO_CLIENT_ID') else 'no'}")
 logger.info(f"BACKEND_URL: {os.getenv('BACKEND_URL')}")
 logger.info(f"FRONTEND_URL: {os.getenv('FRONTEND_URL')}")
-logger.info(f"SESSION_SECRET: {os.getenv('SESSION_SECRET')}")
+logger.info(f"SESSION_SECRET set: {'yes' if os.getenv('SESSION_SECRET') else 'no'}")
 
 # (디버그) 루트/app의 .env 키/값 전체 로드 및 로그
-env_values_root = dotenv_values(_ROOT_ENV)
-env_values_app = dotenv_values(os.path.join(_APP_DIR, ".env"))
-logger.info(f"루트 .env 로드 값: {env_values_root}")
-logger.info(f"app/.env 로드 값: {env_values_app}")
+try:
+    env_values_root = dotenv_values(_ROOT_ENV)
+    logger.info(f"루트 .env 키 수: {len(env_values_root or {})}")
+except Exception:
+    pass
+try:
+    env_values_app = dotenv_values(os.path.join(_APP_DIR, ".env"))
+    logger.info(f"app/.env 키 수: {len(env_values_app or {})}")
+except Exception:
+    pass
 
 app = FastAPI(debug=True)
 

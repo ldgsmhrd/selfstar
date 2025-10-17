@@ -13,11 +13,12 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/auth': { target: 'http://localhost:8000', changeOrigin: true, secure: false },
-      '/api':  { target: 'http://localhost:8000', changeOrigin: true, secure: false },
-      '/user': { target: 'http://localhost:8000', changeOrigin: true, secure: false }, // legacy
-      '/personas': { target: 'http://localhost:8000', changeOrigin: true, secure: false },
-      '/media':{ target: 'http://localhost:8000', changeOrigin: true, secure: false },
+      // In Docker, the backend is reachable via its service name on the default network
+      '/auth': { target: 'http://backend:8000', changeOrigin: true, secure: false },
+      '/api':  { target: 'http://backend:8000', changeOrigin: true, secure: false },
+      '/user': { target: 'http://backend:8000', changeOrigin: true, secure: false }, // legacy
+      '/personas': { target: 'http://backend:8000', changeOrigin: true, secure: false },
+      '/media':{ target: 'http://backend:8000', changeOrigin: true, secure: false },
     },
   },
 }) 
