@@ -20,16 +20,71 @@ SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
 - Frontend (Vite): 5174
 
 빠른 시작(Windows PowerShell)
-- 전체 실행: `scripts/start-all.ps1`
-- 개별 실행: `scripts/start-backend.ps1`, `scripts/start-frontend.ps1`, `scripts/start-ai.ps1`
-- 헬스 체크: `scripts/check-health.ps1`
-- 이미지 생성 테스트: `scripts/test-generate.ps1`
+Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 실행 가이드는 제거되었습니다.
 
-예시
+## Docker로 실행 (권장)
+
+사전 준비
+- Docker Desktop 설치(Windows는 WSL2 필요 시 관리자 PowerShell: `wsl --update`)
+
+1) 환경변수 파일 준비
+- `backend/.env` 생성 후 필수 값 채우기(예시):
+  ```ini
+  SESSION_SECRET=change-me
+  BACKEND_URL=http://localhost:8000
+  FRONTEND_URL=http://localhost:5174
+  
+  # DB (외부 DB 사용 시 알맞게 변경)
+  DB_HOST=project-db-cgi.smhrd.com
+  DB_PORT=3307
+  DB_USER=your_db_user
+  DB_PASSWORD=your_db_password
+  DB_NAME=your_db_name
+  
+  # Kakao OAuth
+  KAKAO_CLIENT_ID=your_kakao_rest_api_key
+  KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
+  KAKAO_SCOPE=profile_nickname,profile_image
+  KAKAO_ADMIN_KEY=your_kakao_admin_key
+  
+  # Google OAuth (선택)
+  GOOGLE_CLIENT_ID=
+  GOOGLE_CLIENT_SECRET=
+  
+  # AI
+  AI_SERVICE_URL=http://ai:8600
+  GOOGLE_API_KEY=   # (선택) 이미지 생성에 필요
+  ```
+- `frontend/.env` 생성:
+  ```ini
+  VITE_API_BASE=http://localhost:8000
+  ```
+
+2) 실행
 ```powershell
-& .\scripts\start-all.ps1
-# 백엔드:8000, AI:8600, 프론트:5174 동시에 기동
+docker-compose up -d --build
 ```
+
+3) 접속
+- 프론트: http://localhost:5174
+- 백엔드: http://localhost:8000 (health: `/health`, auth: `/auth/kakao`)
+- AI: http://localhost:8600 (health: `/health`)
+
+4) 점검
+```powershell
+docker-compose logs backend --tail=100
+docker-compose exec backend printenv | findstr KAKAO
+```
+
+문제 해결
+- 5174/8000/8600 포트 충돌 시 사용 중인 프로세스 종료 후 재실행
+  ```powershell
+  Get-NetTCPConnection -LocalPort 5174,8000,8600 -State Listen
+  Stop-Process -Id <PID> -Force
+  ```
+- 카카오 리다이렉트 오류 시: 
+  - `backend/.env`의 `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI`(http://localhost:8000/auth/kakao/callback) 확인
+  - 카카오 개발자 콘솔 등록값과 일치해야 합니다
 
 레포 구조(요약)
 ```
@@ -166,10 +221,7 @@ npm run dev -- --port 5174
 
 ### 환경변수 예시
 ```
-VITE_API_BASE_URL=http://localhost:8000
-KAKAO_CLIENT_ID=your-kakao-rest-api-key
-KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
-KAKAO_SCOPE=profile_nickname,profile_image
+VITE_API_BASE=http://localhost:8000
 ```
 
 ---
