@@ -194,22 +194,75 @@ function Home({ compact = false }) {
     setSaving(true);
     setError(null);
     try {
+      // 1) 사용자 프로필 저장 (생일/성별)
+      console.log("[save] step1 PUT /users/me/profile", { birthday: bday, gender: mappedGender });
       const res = await fetch(`${API_BASE}/users/me/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ birthday: bday, gender: mappedGender }),
       });
+      console.log("[save] step1 status", res.status);
       if (res.status === 401) throw new Error("로그인이 필요합니다.");
       if (!res.ok) throw new Error(`프로필 저장 실패: ${res.status}`);
       const data = await res.json();
       if (!data?.ok) throw new Error(data?.message || "프로필 저장 실패");
-      setStatus("프로필 저장 완료");
+
+      // 2) 생성된 이미지 파일 저장 (data URI -> /media/*.png)
+      if (!generated) throw new Error("이미지 미리보기가 없습니다. 먼저 생성해주세요.");
+      console.log("[save] step2 POST /api/images/save (JSON), dataURI length=", generated?.length ?? 0);
+      const saveImg = await fetch(`${API_BASE}/api/images/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ image: generated }),
+      });
+      console.log("[save] step2 status", saveImg.status);
+      if (saveImg.status === 401) throw new Error("로그인이 필요합니다.");
+      if (!saveImg.ok) {
+        const t = await saveImg.text().catch(() => "");
+        throw new Error(`이미지 저장 실패: ${saveImg.status} ${t || ""}`.trim());
+      }
+      const saved = await saveImg.json();
+      const mediaUrl = saved?.url;
+      if (!mediaUrl) throw new Error("이미지 저장 경로가 비어있습니다.");
+      console.log("[save] step2 ok, mediaUrl=", mediaUrl);
+
+      // 3) 페르소나 저장 (/personas/setting)
+      const personaBody = {
+        persona_img: mediaUrl,
+        persona_parameters: currentPayload,
+      };
+      console.log("[save] step3 PUT /personas/setting", personaBody);
+      const savePersona = await fetch(`${API_BASE}/personas/setting`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(personaBody),
+      });
+      console.log("[save] step3 status", savePersona.status);
+      if (savePersona.status === 400) {
+        // 서버에서 제한 초과 시 detail 전달: persona_limit_reached
+        const t = await savePersona.text();
+        if (t.includes("persona_limit_reached")) {
+          throw new Error("페르소나는 최대 4개까지 저장할 수 있습니다.");
+        }
+        throw new Error(`페르소나 저장 실패: HTTP 400`);
+      }
+      if (savePersona.status === 401) throw new Error("로그인이 필요합니다.");
+      if (!savePersona.ok) {
+        const t = await savePersona.text().catch(() => "");
+        throw new Error(`페르소나 저장 실패: ${savePersona.status} ${t || ""}`.trim());
+      }
+      const savedPersona = await savePersona.json();
+      if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
+
+      setStatus("프로필/페르소나 저장 완료");
       // 저장 완료 후, 상위(App)에게 프로필 선택 모달 열도록 신호
       try {
         window.dispatchEvent(new CustomEvent("open-profile-select"));
       } catch {
-        // no-op: dispatch might fail in non-browser environments
+        /* noop */
       }
     } catch (e) {
       setError(e?.message || String(e));

@@ -220,10 +220,7 @@ export default function App() {
     return () => window.removeEventListener("open-profile-select", onOpenProfileSelect);
   }, []);
 
-  const openChatFlow = (e) => {
-    e.preventDefault();
-    setShowProfileModal(true);
-  };
+  // Chat은 라우팅 진입 후 프로필 선택을 유도할 예정(페이지 내부에서 처리)
 
   const onProfileChosen = (name) => {
     setShowProfileModal(false);
@@ -232,7 +229,7 @@ export default function App() {
   };
 
   const onAddProfileClick = () => {
-    // 프로필 추가 클릭 시 Imgcreate를 모달로
+    // 프로필 추가 클릭 시 ProfileSelect는 닫고 Imgcreate 모달만 띄워 겹침 문제 방지
     setShowProfileModal(false);
     setShowImgcreateModal(true);
   };
@@ -249,7 +246,7 @@ export default function App() {
           </div>
           <nav className="hidden md:flex items-center gap-5 md:gap-7 text-sm font-semibold ml-36">
             <NavLink to="/" end className={({ isActive }) => `${base} ${isActive ? active : idle}`}>홈</NavLink>
-            <a href="/chat" onClick={openChatFlow} className={`${base} ${idle}`}>채팅</a>
+            <NavLink to="/chat" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>채팅</NavLink>
             <NavLink to="/mypage" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>마이페이지</NavLink>
             <NavLink to="/alerts" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>알림</NavLink>
           </nav>
@@ -303,9 +300,8 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}
-          onClick={() => setShowProfileModal(false)}
         >
-          <div style={{ position: "relative", width: "min(1200px, 96vw)", maxHeight: "96dvh", overflow: "auto", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ position: "relative", width: "min(1200px, 98vw)", maxHeight: "90dvh", overflow: "hidden", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }}>
             <button
               aria-label="닫기"
               onClick={() => setShowProfileModal(false)}
@@ -323,10 +319,10 @@ export default function App() {
         <div
           role="dialog"
           aria-modal="true"
-          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}
+          style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(15,23,42,0.35)", display: "grid", placeItems: "center", padding: 16 }}
           onClick={() => setShowImgcreateModal(false)}
         >
-          <div style={{ position: "relative", width: "min(1200px, 96vw)", maxHeight: "96dvh", overflow: "auto", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ position: "relative", width: "min(1200px, 96vw)", maxHeight: "96dvh", overflow: "auto", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }} onClick={(e) => e.stopPropagation()}>
             <button
               aria-label="닫기"
               onClick={() => setShowImgcreateModal(false)}

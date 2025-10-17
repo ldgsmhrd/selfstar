@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
+import ProfileSelect from "./ProfileSelect.jsx";
 import {
   Bot,
   Hash,
@@ -74,8 +75,9 @@ const avatarFromName = (name) =>
 
 /* ---------------- page ---------------- */
 export default function Chat() {
-  // 단일 프로필
-  const current = { name: "이빛나", avatar: avatarFromName("이빛나") };
+  // 현재 선택된 프로필(없으면 null) → 없으면 프로필 선택 모달 먼저 표시
+  const [current, setCurrent] = useState(null);
+  const [askProfile, setAskProfile] = useState(true);
 
   // 채팅 메시지
   const [messages, setMessages] = useState([
@@ -83,7 +85,7 @@ export default function Chat() {
       id: 1,
       role: "assistant",
       text:
-        "○○님께서 만든 인플루언서 이빛나입니다.\n우측 도우미에서 캡션/해시태그를 바로 복사하세요.",
+        "인플루언서를 선택하거나 생성해 주세요. 우측 도우미에서 캡션/해시태그를 복사할 수 있습니다.",
       ts: Date.now() - 5000,
     },
   ]);
@@ -98,10 +100,7 @@ export default function Chat() {
 
   // 우측 도우미
   const [vibe, setVibe] = useState("insta");
-  const [rightPreview] = useState(null); // 항상 null → 프리뷰 이미지는 표시하지 않음 개발 X
-
-  const caption = useMemo(() => mockCaption(prompt, vibe), [prompt, vibe]);
-  const hashtags = useMemo(() => mockHashtags(prompt), [prompt]);
+  // 우측 미리보기/캡션/해시태그는 즉시 복사용으로만 사용
 
   const copy = async (text) => {
     try {
@@ -134,6 +133,28 @@ export default function Chat() {
     ]);
     setIsGenerating(false);
   };
+
+  // 프로필 선택 모달: Chat 진입시 먼저 호출
+  if (askProfile || !current) {
+    return (
+      <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}>
+        <div style={{ position: "relative", width: "min(1200px, 98vw)", maxHeight: "90dvh", overflow: "hidden", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }}>
+          <ProfileSelect
+            maxSlots={4}
+            onProfileChosen={(name) => {
+              const c = { name, avatar: avatarFromName(name) };
+              setCurrent(c);
+              setAskProfile(false);
+            }}
+            onAddProfileClick={() => {
+              // 선택 모달 닫고 이미지 생성 페이지로 이동 (새 탭 이동이 아닌 동일 라우트 모달 전략은 별도로 가능)
+              window.dispatchEvent(new CustomEvent("open-profile-select"));
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-3 grid grid-cols-12 gap-4 h-[calc(100vh-4rem)] min-h-0">

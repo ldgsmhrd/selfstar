@@ -41,6 +41,8 @@ def _save_data_uri(data_uri: str):
     return out_path, rel_url
 
 
+
+
 @router.post("/images/preview", summary="AI 미리보기(저장 없음)")
 async def preview_image(payload: GenerateImageRequest):
     ai_url = (os.getenv("AI_SERVICE_URL") or "http://localhost:8600").rstrip("/")
@@ -64,6 +66,7 @@ async def preview_image(payload: GenerateImageRequest):
 async def save_image(body: ImageSaveRequest):
     try:
         _, url = _save_data_uri(body.image)
+        log.info("saved preview to %s", url)
         return {"ok": True, "url": url}
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid_data_uri")
