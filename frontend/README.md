@@ -25,6 +25,10 @@ npm run dev -- --port 5174
 이 디렉토리는 FastAPI 백엔드(`/backend`)와 통신하는 React(Vite) 기반 프론트엔드입니다. 초기 버전은 백엔드 헬스 체크(`/health`) 호출 예제를 포함합니다.
 
 온보딩(Consent → UserSetup)
+마이페이지 업데이트
+- 상단 요약 카드에 현재 페르소나(이미지/이름) 표시, “프로필 교체하기” 모달에서 이미지/이름을 보고 선택 가능(`/personas/me` 기반)
+- 연동 관리 모달에 “인스타 연동 하기” 버튼 추가(`/oauth/instagram/start`). 콜백 후 `/oauth/instagram/accounts`로 목록 조회하여 페르소나에 매핑하도록 확장 가능
+
 - 로그인/회원가입 후 백엔드 `/auth/me`의 `needs_consent`가 true면 `/consent` → `/setup`으로 진행합니다.
 - `UserSetup.jsx`에서 성별과 생년월일을 수집하고 `PATCH /user/me/profile`로 동시 저장합니다.
 - 저장이 성공하면 `/imgcreate`로 이동합니다.

@@ -7,7 +7,7 @@ class UserBase(BaseModel):
     user_inherent: str
     user_nick: Optional[str] = None
     user_img: Optional[str] = None
-    user_credit: Optional[int] = 100
+    user_credit: Optional[str] = "standard"
 
 class UserCreate(UserBase):
     password: Optional[str] = None

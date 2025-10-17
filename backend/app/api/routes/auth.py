@@ -69,6 +69,7 @@ async def me(request: Request):
             "nick": user.get("user_nick"),
             "img": user.get("user_img"),
             "platform": user.get("user_platform"),
+            "credit": user.get("user_credit"),
             # 프론트가 필요 시 라우팅 판단에 사용할 수 있도록 노출
             "needs_consent": _needs_consent(user),
         },

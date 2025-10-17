@@ -226,3 +226,15 @@ pytest -q
 - DB 풀은 `app.api.core.mysql.get_mysql_pool()`를 사용합니다(비동기 aiomysql).
 - SQLAlchemy를 사용할 경우 `app/api/core/database.py`의 `AsyncSessionLocal`을 활용하세요.
 
+
+### Instagram 연동(설계/초안)
+- `GET /oauth/instagram/start` → Meta OAuth 시작(redirect)
+- `GET /oauth/instagram/callback` → 코드 교환/장기 토큰 저장
+- `GET /oauth/instagram/accounts` → 사용자 Page/IG 비즈니스 계정 목록 반환
+- `POST /oauth/instagram/link` → 특정 persona_id와 IG 계정 매핑
+- `POST /oauth/instagram/unlink` → 매핑 제거
+
+DB 권장 구조(요약)
+- ss_instagram_connector(user_id, long_lived_user_token, expires_at)
+- ss_persona_instagram(persona_id ↔ ig_user_id, fb_page_id, ig_username)
+

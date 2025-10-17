@@ -19,6 +19,10 @@ SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
 - Backend: 8000
 - Frontend (Vite): 5174
 
+주요 기능 하이라이트(최근)
+- 마이페이지에서 페르소나 표시/교체: `/personas/me` 목록을 불러와 1번 페르소나 기본 노출, “프로필 교체하기” 모달에서 이미지·이름 기반 선택 가능
+- 연동 관리(인스타그램): 마이페이지에서 “인스타 연동 하기” 버튼 제공. OAuth 시작 엔드포인트(`/oauth/instagram/start`)에 연결하여 Meta OAuth 플로우로 연계(백엔드 라우트 필요)
+
 빠른 시작(Windows PowerShell)
 Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 실행 가이드는 제거되었습니다.
 
@@ -63,6 +67,11 @@ Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 �
 2) 실행
 ```powershell
 docker-compose up -d --build
+```
+
+개발용 핫리로드(저장 시 자동 반영)
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 3) 접속
@@ -359,6 +368,9 @@ bash start_vllm.sh
 주요 엔드포인트(세션 필요)
 - `GET /auth/me` → `{ ok, authenticated, user: { id, needs_consent, ... } }`
 - `PUT /users/me/profile` → `{ ok, user: { id, birthday, gender } }`
+- `GET /personas/me` → `{ items: [{ num, img, name }] }` (마이페이지/프로필 선택 UI)
+- `GET /oauth/instagram/accounts` → IG 비즈니스 계정 목록(백엔드 구현 시)
+- `POST /oauth/instagram/link` → 페르소나와 IG 계정 매핑(백엔드 구현 시)
 
 디버깅
 - `GET /__routes` → 등록된 경로 문자열 배열(개발용 도우미)
