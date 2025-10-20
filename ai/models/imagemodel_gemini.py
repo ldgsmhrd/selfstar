@@ -13,13 +13,22 @@ MODEL_NAME = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image-preview")
 _client = None
 log = logging.getLogger("gemini")
 
-# Load repo root .env to pick up GOOGLE_API_KEY reliably
+ㅇ# 서비스별 분리: ai/.env를 우선 로드, 없으면 루트 .env 폴백
 _THIS_DIR = os.path.dirname(__file__)
+_AI_DIR = os.path.abspath(os.path.join(_THIS_DIR, ".."))
 _REPO_ROOT = os.path.abspath(os.path.join(_THIS_DIR, "..", ".."))
-_ENV_PATH = os.path.join(_REPO_ROOT, ".env")
+_AI_ENV = os.path.join(_AI_DIR, ".env")
+_ROOT_ENV = os.path.join(_REPO_ROOT, ".env")
+_loaded = False
 try:
-    load_dotenv(dotenv_path=_ENV_PATH, override=True)
-    log.info(f"[gemini] loaded repo .env from {_ENV_PATH}")
+    if os.path.exists(_AI_ENV):
+        load_dotenv(dotenv_path=_AI_ENV, override=True)
+        log.info(f"[gemini] loaded ai/.env from {_AI_ENV}")
+        _loaded = True
+    elif os.path.exists(_ROOT_ENV):
+        load_dotenv(dotenv_path=_ROOT_ENV, override=True)
+        log.info(f"[gemini] loaded repo .env from {_ROOT_ENV}")
+        _loaded = True
 except Exception as _e:
     log.warning(f"[gemini] failed to load .env: {_e}")
 

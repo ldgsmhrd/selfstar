@@ -62,7 +62,3 @@ async def put_my_persona(payload: PersonaUpsert, request: Request):
     return {"ok": True, "persona_id": int(persona_id)}
 
 
-# Allow POST as well for clients that send POST instead of PUT
-@router.post("/setting", status_code=status.HTTP_201_CREATED)
-async def post_my_persona(payload: PersonaUpsert, request: Request):
-    return await put_my_persona(payload, request)

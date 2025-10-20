@@ -18,6 +18,10 @@ export default function MyPage() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [loadingPersona, setLoadingPersona] = useState(false);
+  // Instagram linking state
+  const [igAccounts, setIgAccounts] = useState(null);
+  const [igLoading, setIgLoading] = useState(false);
+  const [igError, setIgError] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -48,6 +52,48 @@ export default function MyPage() {
     setActivePersona(p);
     if (p?.num) localStorage.setItem("activePersonaNum", String(p.num));
     setSelectorOpen(false);
+  };
+
+  // Load Instagram accounts when integrations modal opens
+  useEffect(() => {
+    const load = async () => {
+      if (!integrationsOpen) return;
+      setIgLoading(true);
+      setIgError(null);
+      try {
+        const res = await fetch(`${API_BASE}/oauth/instagram/accounts`, { credentials: "include" });
+        if (!res.ok) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(txt || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        setIgAccounts(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        setIgError(e?.message || String(e));
+        setIgAccounts(null);
+      } finally {
+        setIgLoading(false);
+      }
+    };
+    load();
+  }, [integrationsOpen]);
+
+  const linkPersonaToIG = async (account) => {
+    if (!activePersona?.num) {
+      alert("먼저 프로필을 선택하세요.");
+      return;
+    }
+    try {
+      const url = `${API_BASE}/oauth/instagram/link?persona_num=${activePersona.num}&ig_user_id=${encodeURIComponent(account.ig_user_id)}&fb_page_id=${encodeURIComponent(account.page_id)}&ig_username=${encodeURIComponent(account.ig_username || "")}`;
+      const res = await fetch(url, { method: "POST", credentials: "include" });
+      if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        throw new Error(t || `HTTP ${res.status}`);
+      }
+      alert("이 페르소나와 인스타 계정이 연결되었습니다.");
+    } catch (e) {
+      alert(`연결 실패: ${e?.message || e}`);
+    }
   };
 
   const posts = useMemo(
@@ -211,27 +257,46 @@ export default function MyPage() {
               <button className="btn" onClick={() => setIntegrationsOpen(false)}>닫기</button>
             </div>
             <div className="p-5 space-y-4">
-              <div className="rounded-xl border border-slate-200 bg-white/70 p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
+              <div className="rounded-xl border border-slate-200 bg-white/70 p-4">
+                <div className="flex items-center gap-3 mb-3">
                   <div className="w-8 h-8 rounded-full bg-black text-white text-[10px] grid place-items-center">IG</div>
                   <div>
-                    <div className="font-semibold">Instagram</div>
-                    <div className="text-xs text-slate-500">게시/댓글 자동 운영을 위해 계정을 연동하세요.</div>
+                    <div className="font-semibold">Instagram 계정 연동</div>
+                    <div className="text-xs text-slate-500">현재 페르소나와 연동할 페이지/계정을 선택하세요.</div>
                   </div>
                 </div>
-                <button
-                  className="btn primary"
-                  onClick={() => {
-                    const url = `${API_BASE}/oauth/instagram/start`;
-                    try {
-                      window.location.href = url;
-                    } catch {
-                      alert("연동 준비 중입니다.");
-                    }
-                  }}
-                >
-                  인스타 연동 하기
-                </button>
+                {igLoading && <div className="text-sm text-slate-500">계정 불러오는 중…</div>}
+                {igError && (
+                  <div className="text-sm text-red-600">
+                    계정 조회 실패: {igError}
+                    <div className="mt-2 text-slate-600">개발 모드에서는 서버 환경변수 <code>IG_LONG_LIVED_USER_TOKEN</code>가 필요합니다.</div>
+                  </div>
+                )}
+                {!igLoading && !igError && Array.isArray(igAccounts) && igAccounts.length === 0 && (
+                  <div className="text-sm text-slate-500">연결 가능한 Instagram 비즈니스 계정을 찾지 못했습니다.</div>
+                )}
+                {!igLoading && !igError && Array.isArray(igAccounts) && igAccounts.length > 0 && (
+                  <div className="grid gap-3">
+                    {igAccounts.map((acc) => (
+                      <div key={`${acc.page_id}-${acc.ig_user_id}`} className="rounded-lg border border-slate-200 bg-white/80 p-3 flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">{acc.page_name} <span className="text-slate-400 text-xs">({acc.page_id})</span></div>
+                          <div className="text-xs text-slate-600">IG: @{acc.ig_username} <span className="text-slate-400">[{acc.ig_user_id}]</span></div>
+                        </div>
+                        <button className="btn primary" onClick={() => linkPersonaToIG(acc)}>
+                          {activePersona?.name ? `${activePersona.name}에 연결` : "현재 페르소나에 연결"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 text-xs text-slate-500">
+                  토큰이 만료되었거나 계정이 보이지 않으면 Meta OAuth를 다시 진행하세요.
+                  <button
+                    className="btn light ml-2"
+                    onClick={() => { window.location.href = `${API_BASE}/oauth/instagram/start`; }}
+                  >다시 인증</button>
+                </div>
               </div>
             </div>
           </div>

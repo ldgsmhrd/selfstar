@@ -31,8 +31,8 @@ Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 �
 사전 준비
 - Docker Desktop 설치(Windows는 WSL2 필요 시 관리자 PowerShell: `wsl --update`)
 
-1) 환경변수 파일 준비
-- `backend/.env` 생성 후 필수 값 채우기(예시):
+1) 환경변수 파일 준비 (서비스별 분리)
+- `backend/.env` 생성(예시는 backend/.env.example 참고):
   ```ini
   SESSION_SECRET=change-me
   BACKEND_URL=http://localhost:8000
@@ -55,18 +55,23 @@ Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 �
   GOOGLE_CLIENT_ID=
   GOOGLE_CLIENT_SECRET=
   
-  # AI
+  # AI 서비스 URL
   AI_SERVICE_URL=http://ai:8600
-  GOOGLE_API_KEY=   # (선택) 이미지 생성에 필요
   ```
-- `frontend/.env` 생성:
+- `frontend/.env` 생성(예시는 frontend/.env.example 참고):
   ```ini
   VITE_API_BASE=http://localhost:8000
+  ```
+- `ai/.env` 생성(예시는 ai/.env.example 참고):
+  ```ini
+  AI_REQUIRE_MODEL=1
+  GOOGLE_API_KEY=<YOUR_GOOGLE_GENAI_KEY>
+  GEMINI_IMAGE_MODEL=gemini-2.5-flash-image-preview
   ```
 
 2) 실행
 ```powershell
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 개발용 핫리로드(저장 시 자동 반영)

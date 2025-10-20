@@ -13,7 +13,7 @@ requirements.txt               # 서빙 의존성
 
 필수 요구사항
 - Python 3.12+
-- GOOGLE_API_KEY
+- GOOGLE_API_KEY (ai/.env 또는 환경변수로 주입)
 
 설치
 ```powershell
@@ -25,8 +25,14 @@ pip install -r requirements.txt
 
 환경 변수(예시)
 ```powershell
+# 방법 1) ai/.env 파일 사용 (권장)
+#  - ai/.env.example을 복사한 후 값 채우기
+#    AI_REQUIRE_MODEL=1
+#    GOOGLE_API_KEY=<YOUR_API_KEY>
+
+# 방법 2) 현재 셸에 직접 주입
 $env:GOOGLE_API_KEY = "<YOUR_API_KEY>"
-$env:AI_REQUIRE_MODEL = "true"
+$env:AI_REQUIRE_MODEL = "1"
 ```
 
 실행
