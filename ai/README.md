@@ -1,5 +1,7 @@
 # AI 서버 (Gemini 이미지 생성)
 
+> Docker로 실행 중이라면 루트 `README.md`의 "Docker로 실행 (권장)" 섹션을 먼저 참고하세요. 이 문서는 로컬 실행 대안을 포함합니다.
+
 FastAPI 기반 최소 서빙으로, Google Gemini 이미지 모델을 호출해 PNG를 반환합니다.
 
 구성 요약
@@ -32,10 +34,6 @@ $env:AI_REQUIRE_MODEL = "true"
 python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
 # Health: http://localhost:8600/health
 ```
-또는 루트 스크립트 사용
-```powershell
-& ..\scripts\start-ai.ps1
-```
 
 API
 - POST /predict
@@ -44,6 +42,5 @@ API
 
 비고
 - 응답 이미지는 Pillow로 검증·재인코딩되어 브라우저에서 바로 표시 가능한 PNG입니다.
- - Pillow 미설치 시 폴백 이미지는 비활성일 수 있습니다. 개발 편의를 위해 설치 권장.
- - .env 파일은 리포지토리 루트에 위치하면 자동으로 로드됩니다.
- - 백엔드가 `AI_SERVICE_URL`로 이 서버를 호출하여 `/api/image/generate`를 제공합니다.
+- .env는 루트 또는 컨테이너 환경변수로 주입 가능합니다.
+- 백엔드가 `AI_SERVICE_URL`로 이 서버를 호출하여 `/api/images` 응답에 사용합니다.

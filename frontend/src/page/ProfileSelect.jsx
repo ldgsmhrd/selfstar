@@ -1,4 +1,4 @@
- import React, { useMemo, useState } from "react";
+ import React, { useMemo, useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
 /**
@@ -7,13 +7,59 @@ import { useNavigate, Link } from "react-router-dom";
  * Props (optional):
  * - maxSlots?: number                        // 기본 4
  */
-export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick }) {
+export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick, compact = false }) {
   const navigate = useNavigate();
-  // 내부 모델: { type: "profile" | "add", name?: string }
-  const [tiles, setTiles] = useState(() => {
-    const arr = Array.from({ length: maxSlots }, (_, i) => (i === 0 ? { type: "add" } : { type: "locked" }));
-    return arr;
-  });
+  // 내부 모델: { type: "profile" | "add" | "locked", name?: string, img?: string, num?: number }
+  const [tiles, setTiles] = useState(() => Array.from({ length: maxSlots }, (_, i) => (i === 0 ? { type: "add" } : { type: "locked" })));
+  const [userCredit, setUserCredit] = useState(null);
+  const [personas, setPersonas] = useState([]); // [{ num, img, name }]
+  // credit가 'pro'이면 모든 슬롯 잠금 해제
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/auth/me", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!alive) return;
+        setUserCredit(data?.user?.credit || null);
+      } catch {
+        /* noop */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // 내 페르소나 목록 불러오기 (user_persona_num 순)
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/personas/me", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!alive) return;
+        const items = Array.isArray(data?.items) ? data.items : [];
+        // 안전 정렬
+        items.sort((a, b) => (a.num || 0) - (b.num || 0));
+        setPersonas(items);
+      } catch {
+        /* noop */
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // personas + credit -> tiles 재구성
+  useEffect(() => {
+    const used = personas.slice(0, maxSlots).map(p => ({ type: "profile", name: p.name, img: p.img, num: p.num }));
+    const empty = Math.max(0, maxSlots - used.length);
+    const allowedAdds = userCredit === "pro" ? empty : Math.min(1, empty);
+    const adds = Array.from({ length: allowedAdds }, () => ({ type: "add" }));
+    const locks = Array.from({ length: empty - allowedAdds }, () => ({ type: "locked" }));
+    const nextTiles = used.concat(adds, locks).slice(0, maxSlots);
+    setTiles(nextTiles);
+  }, [personas, userCredit, maxSlots]);
   const [selectedIndex, setSelectedIndex] = useState(null);
 
   // 모달 상태
@@ -82,7 +128,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
   };
 
   return (
-    <div className="page">
+    <div className={`page ${compact ? "is-compact" : ""}`}>
       <StyleTag />
       <div className="wrap" role="application" aria-label="프로필 선택">
         <Link to="/" className="brand-link" aria-label="SelfStar.AI 홈으로">
@@ -110,7 +156,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
                   style={{ "--i": idx }}
                 >
                   <div className="tile-inner">
-                    <div className="lock" aria-hidden="true">🔒</div>
+                    <div className="lock" aria-hidden="true">{userCredit === "pro" ? "" : "🔒"}</div>
                     <div className="label">잠금</div>
                   </div>
                 </button>
@@ -129,7 +175,13 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
                 <div className="tile-inner">
                   {t.type === "profile" ? (
                     <>
-                      <div className="pfp" aria-hidden="true">{initialFrom(t.name)}</div>
+                      {t.img ? (
+                        <div className="pfpimg-wrap" aria-hidden="true">
+                          <img src={t.img} alt="" className="pfp-img" />
+                        </div>
+                      ) : (
+                        <div className="pfp" aria-hidden="true">{initialFrom(t.name)}</div>
+                      )}
                       <div className="label">{t.name}</div>
                     </>
                   ) : (
@@ -218,7 +270,7 @@ function StyleTag() {
   *{box-sizing:border-box}
   html,body,#root{height:100%}
   .page{
-    min-height:calc(100dvh - var(--header-h)); display:flex; align-items:center; justify-content:center;
+    display:flex; align-items:center; justify-content:center;
     padding:clamp(16px,3vw,32px);
     color:var(--ink);
     font:16px/1.5 "Pretendard",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -227,13 +279,15 @@ function StyleTag() {
       linear-gradient(180deg, var(--bg-0) 0%, var(--bg-1) 60%, #f9fbff 100%);
   }
   .wrap{ width:min(1160px,94vw); text-align:center; }
+  .wrap h1{ margin-top:6px }
+  .wrap{ width:min(1160px,94vw); text-align:center; }
   .brand-link{ display:inline-flex; align-items:center; justify-content:center; gap:3px; margin:0 auto 16px; font-weight:800; letter-spacing:-.2px; font-size:clamp(18px, 2.2vw, 22px); padding:8px 12px; border-radius:14px; border:1px solid #e4eefc; background:linear-gradient(180deg,#ffffff,#f6fbff); color:#0f1d2b; box-shadow:0 8px 20px rgba(45,108,223,.10), inset 0 1px 0 rgba(255,255,255,.9); text-decoration:none }
   .brand-blue{ color:#2563eb }
   .brand-dot{ color:#0f1d2b }
   h1{ margin:0 0 10px; font-weight:900; letter-spacing:-.4px; font-size:clamp(22px,3.4vw,36px); }
   .sub{ color:var(--muted); margin:0 0 26px; font-size:14px }
 
-  .grid{ display:grid; gap:18px; grid-template-columns: repeat(4, 220px); justify-content:center }
+  .grid{ display:grid; gap:18px; grid-template-columns: repeat(4, 240px); justify-content:center }
   @media (max-width:980px){ .grid{ grid-template-columns: repeat(3,1fr); } }
   @media (max-width:680px){ .grid{ grid-template-columns: repeat(2,1fr); } }
 
@@ -285,10 +339,12 @@ function StyleTag() {
   .tile.locked:hover, .tile.locked:focus-visible{ transform:none; box-shadow: 0 10px 24px rgba(45,108,223,.10), inset 0 1px 0 rgba(255,255,255,.85); border-color:#E3EEFF }
   .tile.locked::before, .tile.locked::after{ display:none }
   .tile.is-selected{
-    animation: nfxPulse .42s cubic-bezier(.3,1.4,.4,1);
-    box-shadow: 0 22px 44px rgba(45,108,223,.18), 0 0 0 3px rgba(159,208,255,.45) inset;
-    border-color:#CFE3FB;
+    /* 단순 파란 테두리 링으로 선택만 표시 (레이아웃 변화 없음) */
+    transform:none !important;
+    box-shadow: 0 0 0 3px #3b82f6 inset, 0 16px 34px rgba(45,108,223,.16);
+    border-color:#bfdbfe;
   }
+  .tile.is-selected:hover, .tile.is-selected:focus-visible{ transform:none; box-shadow: 0 0 0 3px #3b82f6 inset, 0 18px 36px rgba(45,108,223,.2) }
   /* glow ring & shine */
   .tile::after{
     content:""; position:absolute; inset:-2px; border-radius:20px; pointer-events:none;
@@ -329,7 +385,18 @@ function StyleTag() {
     border:1px solid rgba(203,224,255,.8);
     transition: transform .2s ease;
   }
+  .pfpimg-wrap{ width:100%; display:flex; align-items:center; justify-content:center }
+  .pfp-img{
+    width:168px; height:148px; object-fit:cover; border-radius:22px; border:1px solid rgba(203,224,255,.9);
+    box-shadow: 0 14px 30px rgba(45,108,223,.18), inset 0 1px 0 rgba(255,255,255,.7);
+    background:#fff;
+  }
   .tile:hover .pfp{ transform: translateY(-2px) scale(1.03); }
+  .tile:hover .pfp-img{ transform: translateY(-1px); }
+
+  /* 선택 상태를 좀 더 분명하게 */
+  .tile.is-selected .label{ opacity: 0.98 }
+  .tile.is-selected .pfp-img{ box-shadow: 0 14px 30px rgba(45,108,223,.2) }
 
   .plus{
     width:64px; height:64px; display:grid; place-items:center; border-radius:18px;

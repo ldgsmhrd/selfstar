@@ -19,17 +19,81 @@ SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
 - Backend: 8000
 - Frontend (Vite): 5174
 
-빠른 시작(Windows PowerShell)
-- 전체 실행: `scripts/start-all.ps1`
-- 개별 실행: `scripts/start-backend.ps1`, `scripts/start-frontend.ps1`, `scripts/start-ai.ps1`
-- 헬스 체크: `scripts/check-health.ps1`
-- 이미지 생성 테스트: `scripts/test-generate.ps1`
+주요 기능 하이라이트(최근)
+- 마이페이지에서 페르소나 표시/교체: `/personas/me` 목록을 불러와 1번 페르소나 기본 노출, “프로필 교체하기” 모달에서 이미지·이름 기반 선택 가능
+- 연동 관리(인스타그램): 마이페이지에서 “인스타 연동 하기” 버튼 제공. OAuth 시작 엔드포인트(`/oauth/instagram/start`)에 연결하여 Meta OAuth 플로우로 연계(백엔드 라우트 필요)
 
-예시
+빠른 시작(Windows PowerShell)
+Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 실행 가이드는 제거되었습니다.
+
+## Docker로 실행 (권장)
+
+사전 준비
+- Docker Desktop 설치(Windows는 WSL2 필요 시 관리자 PowerShell: `wsl --update`)
+
+1) 환경변수 파일 준비
+- `backend/.env` 생성 후 필수 값 채우기(예시):
+  ```ini
+  SESSION_SECRET=change-me
+  BACKEND_URL=http://localhost:8000
+  FRONTEND_URL=http://localhost:5174
+  
+  # DB (외부 DB 사용 시 알맞게 변경)
+  DB_HOST=project-db-cgi.smhrd.com
+  DB_PORT=3307
+  DB_USER=your_db_user
+  DB_PASSWORD=your_db_password
+  DB_NAME=your_db_name
+  
+  # Kakao OAuth
+  KAKAO_CLIENT_ID=your_kakao_rest_api_key
+  KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
+  KAKAO_SCOPE=profile_nickname,profile_image
+  KAKAO_ADMIN_KEY=your_kakao_admin_key
+  
+  # Google OAuth (선택)
+  GOOGLE_CLIENT_ID=
+  GOOGLE_CLIENT_SECRET=
+  
+  # AI
+  AI_SERVICE_URL=http://ai:8600
+  GOOGLE_API_KEY=   # (선택) 이미지 생성에 필요
+  ```
+- `frontend/.env` 생성:
+  ```ini
+  VITE_API_BASE=http://localhost:8000
+  ```
+
+2) 실행
 ```powershell
-& .\scripts\start-all.ps1
-# 백엔드:8000, AI:8600, 프론트:5174 동시에 기동
+docker-compose up -d --build
 ```
+
+개발용 핫리로드(저장 시 자동 반영)
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+3) 접속
+- 프론트: http://localhost:5174
+- 백엔드: http://localhost:8000 (health: `/health`, auth: `/auth/kakao`)
+- AI: http://localhost:8600 (health: `/health`)
+
+4) 점검
+```powershell
+docker-compose logs backend --tail=100
+docker-compose exec backend printenv | findstr KAKAO
+```
+
+문제 해결
+- 5174/8000/8600 포트 충돌 시 사용 중인 프로세스 종료 후 재실행
+  ```powershell
+  Get-NetTCPConnection -LocalPort 5174,8000,8600 -State Listen
+  Stop-Process -Id <PID> -Force
+  ```
+- 카카오 리다이렉트 오류 시: 
+  - `backend/.env`의 `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI`(http://localhost:8000/auth/kakao/callback) 확인
+  - 카카오 개발자 콘솔 등록값과 일치해야 합니다
 
 레포 구조(요약)
 ```
@@ -166,10 +230,7 @@ npm run dev -- --port 5174
 
 ### 환경변수 예시
 ```
-VITE_API_BASE_URL=http://localhost:8000
-KAKAO_CLIENT_ID=your-kakao-rest-api-key
-KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
-KAKAO_SCOPE=profile_nickname,profile_image
+VITE_API_BASE=http://localhost:8000
 ```
 
 ---
@@ -307,6 +368,9 @@ bash start_vllm.sh
 주요 엔드포인트(세션 필요)
 - `GET /auth/me` → `{ ok, authenticated, user: { id, needs_consent, ... } }`
 - `PUT /users/me/profile` → `{ ok, user: { id, birthday, gender } }`
+- `GET /personas/me` → `{ items: [{ num, img, name }] }` (마이페이지/프로필 선택 UI)
+- `GET /oauth/instagram/accounts` → IG 비즈니스 계정 목록(백엔드 구현 시)
+- `POST /oauth/instagram/link` → 페르소나와 IG 계정 매핑(백엔드 구현 시)
 
 디버깅
 - `GET /__routes` → 등록된 경로 문자열 배열(개발용 도우미)

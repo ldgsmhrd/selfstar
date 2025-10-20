@@ -80,7 +80,7 @@ async def create_user(user: Dict[str, Any]) -> Dict[str, Any]:
                user_gender, user_phone, user_age, user_birthday, user_language, user_credit, joined_at)
             VALUES
               (%s, %s, %s, %s, %s,
-               %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+               %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
             """,
             (
                 user.get("user_platform"),
@@ -93,7 +93,7 @@ async def create_user(user: Dict[str, Any]) -> Dict[str, Any]:
                 user.get("user_age"),
                 user.get("user_birthday"),
                 user.get("user_language"),
-                user.get("user_credit", 100),
+                user.get("user_credit", "standard"),
             ),
         )
         await conn.commit()
@@ -127,21 +127,29 @@ async def upsert_user_from_oauth(
             )
             existed = await cur.fetchone() is not None
 
-        # 2) upsert (중복키 전제: user_inherent 또는 (user_platform, user_inherent) UNIQUE)
+        # 2) 생성/갱신 분기 — 신규면 'standard'로 세팅, 기존이면 크레딧은 그대로 유지
         async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO ss_user
-                  (user_platform, user_inherent, user_nick, user_img, user_credit)
-                VALUES
-                  (%s, %s, %s, %s, 100)
-                ON DUPLICATE KEY UPDATE
-                  user_platform = VALUES(user_platform),
-                  user_nick     = COALESCE(VALUES(user_nick), user_nick),
-                  user_img      = COALESCE(VALUES(user_img),  user_img)
-                """,
-                (provider, inherent, nick, img),
-            )
+            if not existed:
+                await cur.execute(
+                    """
+                    INSERT INTO ss_user
+                      (user_platform, user_inherent, user_nick, user_img, user_credit)
+                    VALUES
+                      (%s, %s, %s, %s, 'standard')
+                    """,
+                    (provider, inherent, nick, img),
+                )
+            else:
+                await cur.execute(
+                    """
+                    UPDATE ss_user
+                    SET user_platform = %s,
+                        user_nick     = COALESCE(%s, user_nick),
+                        user_img      = COALESCE(%s, user_img)
+                    WHERE user_platform = %s AND user_inherent = %s
+                    """,
+                    (provider, nick, img, provider, inherent),
+                )
             await conn.commit()
 
         # 3) 조회는 DictCursor로

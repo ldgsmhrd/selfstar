@@ -1,5 +1,7 @@
 # Backend (FastAPI)
 
+> Docker로 실행 중이라면 루트 `README.md`의 "Docker로 실행 (권장)" 섹션을 우선 참고하세요. 이 문서는 로컬(vENV) 개발 대안을 포함합니다.
+
 이 문서는 백엔드의 유일한 문서입니다. `app/api/README.md`의 모든 내용은 여기에 통합되었으며, 서버는 항상 Python 가상환경(.venv)에서 실행하는 것을 기준으로 합니다.
 
 ## 폴더 구조 (정리됨)
@@ -223,4 +225,16 @@ pytest -q
 - `.env`는 루트(`backend/.env`)와 `app/.env`를 모두 시도해 로드합니다(루트 우선).
 - DB 풀은 `app.api.core.mysql.get_mysql_pool()`를 사용합니다(비동기 aiomysql).
 - SQLAlchemy를 사용할 경우 `app/api/core/database.py`의 `AsyncSessionLocal`을 활용하세요.
+
+
+### Instagram 연동(설계/초안)
+- `GET /oauth/instagram/start` → Meta OAuth 시작(redirect)
+- `GET /oauth/instagram/callback` → 코드 교환/장기 토큰 저장
+- `GET /oauth/instagram/accounts` → 사용자 Page/IG 비즈니스 계정 목록 반환
+- `POST /oauth/instagram/link` → 특정 persona_id와 IG 계정 매핑
+- `POST /oauth/instagram/unlink` → 매핑 제거
+
+DB 권장 구조(요약)
+- ss_instagram_connector(user_id, long_lived_user_token, expires_at)
+- ss_persona_instagram(persona_id ↔ ig_user_id, fb_page_id, ig_username)
 
