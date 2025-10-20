@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import ProfileSelect from "./ProfileSelect.jsx";
 import {
@@ -75,6 +76,7 @@ const avatarFromName = (name) =>
 
 /* ---------------- page ---------------- */
 export default function Chat() {
+  const navigate = useNavigate();
   // 현재 선택된 프로필(없으면 null) → 없으면 프로필 선택 모달 먼저 표시
   const [current, setCurrent] = useState(null);
   const [askProfile, setAskProfile] = useState(true);
@@ -134,11 +136,28 @@ export default function Chat() {
     setIsGenerating(false);
   };
 
+  // Imgcreate에서 저장 완료(postMessage -> App -> window event) 시 다시 프로필 선택 모달을 열어준다
+  useEffect(() => {
+    const onOpenProfileSelect = () => {
+      setAskProfile(true);
+      setCurrent(null);
+    };
+    window.addEventListener("open-profile-select", onOpenProfileSelect);
+    return () => window.removeEventListener("open-profile-select", onOpenProfileSelect);
+  }, []);
+
   // 프로필 선택 모달: Chat 진입시 먼저 호출
   if (askProfile || !current) {
     return (
       <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}>
         <div style={{ position: "relative", width: "min(1200px, 98vw)", maxHeight: "90dvh", overflow: "hidden", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }}>
+          <button
+            aria-label="닫기"
+            onClick={() => navigate("/")}
+            style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}
+          >
+            ×
+          </button>
           <ProfileSelect
             maxSlots={4}
             onProfileChosen={(name) => {
@@ -147,8 +166,9 @@ export default function Chat() {
               setAskProfile(false);
             }}
             onAddProfileClick={() => {
-              // 선택 모달 닫고 이미지 생성 페이지로 이동 (새 탭 이동이 아닌 동일 라우트 모달 전략은 별도로 가능)
-              window.dispatchEvent(new CustomEvent("open-profile-select"));
+              // 선택 모달 닫고 이미지 생성 모달을 열라는 신호(App에서 iframe으로 처리)
+              setAskProfile(false);
+              window.dispatchEvent(new CustomEvent("open-imgcreate"));
             }}
           />
         </div>

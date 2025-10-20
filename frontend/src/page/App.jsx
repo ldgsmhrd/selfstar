@@ -1,6 +1,6 @@
 // App.jsx
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Routes, Route, NavLink, Link, useNavigate } from "react-router-dom";
+import { Routes, Route, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
 import Signup from "./Signup.jsx";
 import Imgcreate from "./Imgcreate.jsx";
 import MyPage from "./MyPage.jsx";
@@ -202,22 +202,57 @@ function Home({ onStart }) {
 
 /* ========================= App Shell ========================= */
 export default function App() {
+  const location = useLocation();
   const { user, logout } = useAuth();
+  const isEmbedParam = new URLSearchParams(location.search).get("embed") === "1";
+  const isFramed = typeof window !== "undefined" && window.parent !== window;
+  const isEmbed = isEmbedParam || isFramed;
   // 모달 대신 /signup 라우트로 이동하므로 관련 상태 제거
   const navigate = useNavigate();
 
   // Chat 진입 모달 상태
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showImgcreateModal, setShowImgcreateModal] = useState(false);
+  const [imgModalSize, setImgModalSize] = useState({ w: 1100, h: 760 });
 
   // Imgcreate에서 저장 완료 후 ProfileSelect만 가운데 열고 Imgcreate 모달은 닫기
   useEffect(() => {
     const onOpenProfileSelect = () => {
+      // Chat 페이지에서는 Chat 내부에서 자체 프로필 선택 모달을 띄우므로 App 레벨 모달은 무시
+      if (window?.location?.pathname === "/chat") return;
+      // Imgcreate 완료 시 Imgcreate 모달은 닫고 ProfileSelect 모달 오픈
       setShowImgcreateModal(false);
       setShowProfileModal(true);
     };
     window.addEventListener("open-profile-select", onOpenProfileSelect);
     return () => window.removeEventListener("open-profile-select", onOpenProfileSelect);
+  }, []);
+
+  // 외부에서(예: Chat) 이미지 생성 모달을 열라는 신호
+  useEffect(() => {
+    const onOpenImgcreate = () => {
+      setShowProfileModal(false);
+      setShowImgcreateModal(true);
+    };
+    window.addEventListener("open-imgcreate", onOpenImgcreate);
+    return () => window.removeEventListener("open-imgcreate", onOpenImgcreate);
+  }, []);
+
+  // Imgcreate(iframe)에서 넘어오는 콘텐츠 크기를 받아 모달 컨테이너 크기 자동 조절
+  useEffect(() => {
+    const onMsg = (e) => {
+      const d = e?.data;
+      if (!d || d.type !== "imgcreate-size") return;
+      const vw = typeof window !== "undefined" ? window.innerWidth : 1920;
+      const vh = typeof window !== "undefined" ? window.innerHeight : 1080;
+      const maxW = Math.min(1200, Math.floor(vw * 0.96));
+      const maxH = Math.min(900, Math.floor(vh * 0.96));
+      const w = Math.min(maxW, Math.max(840, Number(d.width) || 1100));
+      const h = Math.min(maxH, Math.max(600, Number(d.height) || 760));
+      setImgModalSize({ w, h });
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
   }, []);
 
   // Chat은 라우팅 진입 후 프로필 선택을 유도할 예정(페이지 내부에서 처리)
@@ -229,7 +264,7 @@ export default function App() {
   };
 
   const onAddProfileClick = () => {
-    // 프로필 추가 클릭 시 ProfileSelect는 닫고 Imgcreate 모달만 띄워 겹침 문제 방지
+    // 모달로 열되, CSS 격리를 위해 iframe으로 /imgcreate 페이지를 그대로 로드
     setShowProfileModal(false);
     setShowImgcreateModal(true);
   };
@@ -237,6 +272,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_40%,#f7f7fb_100%)] text-slate-900">
       {/* Header */}
+      {!isEmbed && (
       <header className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b">
         <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
           <div className="text-2xl font-extrabold select-none tracking-tight">
@@ -270,10 +306,11 @@ export default function App() {
             )}
           </div>
         </div>
-      </header>
+  </header>
+  )}
 
       {/* Routes */}
-      <main className="flex-1">
+  <main className={isEmbed ? "" : "flex-1"}>
         <Routes>
           <Route path="/" element={<Home onStart={undefined} />} />
           <Route path="/signup" element={<Signup />} />
@@ -295,7 +332,7 @@ export default function App() {
       </main>
 
       {/* ProfileSelect 모달: 가운데 정렬 (채팅 클릭 or 저장 완료 시) */}
-      {showProfileModal && (
+      {!isEmbed && showProfileModal && (
         <div
           role="dialog"
           aria-modal="true"
@@ -314,28 +351,35 @@ export default function App() {
         </div>
       )}
 
-      {/* Imgcreate 모달: 프로필 추가를 눌렀을 때 */}
-      {showImgcreateModal && (
+      {/* Imgcreate 모달: 동일 출처 iframe으로 페이지 자체를 내장 렌더링(스타일 붕괴 방지) */}
+      {!isEmbed && showImgcreateModal && (
         <div
           role="dialog"
           aria-modal="true"
-          style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(15,23,42,0.35)", display: "grid", placeItems: "center", padding: 16 }}
+          style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}
           onClick={() => setShowImgcreateModal(false)}
         >
-          <div style={{ position: "relative", width: "min(1200px, 96vw)", maxHeight: "96dvh", overflow: "auto", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }} onClick={(e) => e.stopPropagation()}>
+          <div
+            style={{ position: "relative", width: Math.min(imgModalSize.w, Math.floor(window.innerWidth * 0.96)), height: Math.min(imgModalSize.h, Math.floor(window.innerHeight * 0.96)), borderRadius: 18, overflow: "hidden", boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff" }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               aria-label="닫기"
               onClick={() => setShowImgcreateModal(false)}
-              style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}
+              style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155", zIndex: 2 }}
             >
               ×
             </button>
-            <Imgcreate compact />
+            <iframe
+              title="이미지 생성"
+              src="/imgcreate?embed=1"
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: 0 }}
+            />
           </div>
         </div>
       )}
 
-      <Footer />
+      {!isEmbed && <Footer />}
     </div>
   );
 }

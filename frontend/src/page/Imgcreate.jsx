@@ -1,5 +1,6 @@
 // Imgcreate.jsx
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import guideImg from "../../img/fixed_face.png";
 import { API_BASE } from "@/api/client";
 import TypingText from "../components/TypingText";
@@ -8,6 +9,32 @@ import StyleTag from "../components/StyleTag";
 
 /* ========================= Home ========================= */
 function Home({ compact = false }) {
+  const location = useLocation();
+  const isEmbed = new URLSearchParams(location.search).get("embed") === "1";
+  // 임베드 모드일 때 부모 모달 크기 자동 조절
+  useEffect(() => {
+    if (!isEmbed) return;
+    const sendSize = () => {
+      try {
+        const h = document.documentElement.scrollHeight;
+        const w = document.documentElement.scrollWidth;
+        window.parent?.postMessage({ type: "imgcreate-size", height: h, width: w }, "*");
+      } catch {}
+    };
+    const onResize = () => sendSize();
+    const ro = new ResizeObserver(() => sendSize());
+    try { ro.observe(document.body); } catch {}
+    window.addEventListener("load", sendSize);
+    window.addEventListener("resize", onResize);
+    // 최초 약간 지연 후 한 번 더
+    const t = setTimeout(sendSize, 50);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("load", sendSize);
+      try { ro.disconnect(); } catch {}
+    };
+  }, [isEmbed]);
   // 기본 필드
   const [name, setName] = useState("이빛나");
   const [gender, setGender] = useState("여");
@@ -261,6 +288,10 @@ function Home({ compact = false }) {
       // 저장 완료 후, 상위(App)에게 프로필 선택 모달 열도록 신호
       try {
         window.dispatchEvent(new CustomEvent("open-profile-select"));
+        // 임베드(iframe)일 경우 부모에도 알림
+        if (window.parent && window.parent !== window) {
+          window.parent.postMessage({ type: "open-profile-select" }, "*");
+        }
       } catch {
         /* noop */
       }
@@ -275,14 +306,14 @@ function Home({ compact = false }) {
     <>
       <StyleTag />
 
-  <main className={compact ? "mx-auto max-w-6xl p-4" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch">
+  <main className={isEmbed ? "mx-auto w-full max-w-[1080px] p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
+    <div className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}>
           {/* 좌측 미리보기 카드 */}
-          <section className="card overflow-hidden h-full">
+          <section className="card overflow-hidden h-full z-0 bg-white">
             <div className="bg-black flex items-center justify-center">
               <div className="relative w-full max-w-[520px] aspect-square" aria-busy={loading} aria-live="polite">
                 {loading ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-blue-200">
+                  <div className="absolute inset-0 flex items-center justify-center text-blue-200 bg-black/40">
                     <span className="animate-pulse">{status || "생성중…"}</span>
                   </div>
                 ) : (generatedUrl || generated) ? (
@@ -297,7 +328,7 @@ function Home({ compact = false }) {
                     }}
                   />
                 ) : (
-                  <div className="absolute inset-0 bg-[radial-gradient(120%_80%_at_10%_0%,rgba(255,255,255,0.12),transparent_60%)] pointer-events-none" />
+                  <div className="absolute inset-0 bg-white pointer-events-none" />
                 )}
               </div>
             </div>
@@ -306,9 +337,10 @@ function Home({ compact = false }) {
               <p className="text-xs md:text-sm text-slate-600">얼굴 ID를 고정할 때 일상과 바뀐 다양한 결과를 얻을 수 있습니다.</p>
             </div>
           </section>
+          
 
           {/* 우측 입력 카드 */}
-          <section className="rounded-2xl border border-blue-200 bg-blue-50/60 p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full">
+          <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:left-[-12px]'}`}>
             {/* 말풍선 헤더 */}
             <div className="flex items-start gap-3 mb-4">
               <img src={guideImg} alt="guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full object-cover border" />
