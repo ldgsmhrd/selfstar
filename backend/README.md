@@ -103,7 +103,7 @@ pip install aiomysql sqlalchemy
 VS Code에서 자동으로 .venv를 사용하려면(권장), 워크스페이스의 Python 인터프리터를 `backend/.venv`로 선택하세요. 이 저장소에는 `.vscode/settings.json`을 제공하여 기본 인터프리터가 `backend/.venv`로 지정됩니다.
 
 ## 환경 변수 (.env)
-`backend/.env` 파일을 만들어 아래 예시를 채워주세요. `app/.env`도 읽히지만, 기본은 프로젝트 루트의 `.env`입니다.
+`backend/.env` 파일을 만들어 아래 예시를 채워주세요. 예시는 `backend/.env.example`을 참고하세요. (서비스별 분리: 루트 `.env`는 더 이상 사용하지 않습니다)
 ```
 # 기본 URL
 BACKEND_URL=http://localhost:8000
@@ -135,6 +135,9 @@ KAKAO_ADMIN_KEY=YOUR_ADMIN_KEY
 GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
 GOOGLE_CLIENT_SECRET=YOUR_GOOGLE_CLIENT_SECRET
 GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
+
+# Instagram Graph API (개발용)
+IG_LONG_LIVED_USER_TOKEN=
 ```
 
 ## 실행 (개발 모드)
@@ -222,7 +225,6 @@ pytest -q
 - 401/세션 누락: 브라우저 쿠키 차단 여부, `SESSION_SECRET` 설정 확인
 
 ## 기타
-- `.env`는 루트(`backend/.env`)와 `app/.env`를 모두 시도해 로드합니다(루트 우선).
 - DB 풀은 `app.api.core.mysql.get_mysql_pool()`를 사용합니다(비동기 aiomysql).
 - SQLAlchemy를 사용할 경우 `app/api/core/database.py`의 `AsyncSessionLocal`을 활용하세요.
 
@@ -237,4 +239,7 @@ pytest -q
 DB 권장 구조(요약)
 - ss_instagram_connector(user_id, long_lived_user_token, expires_at)
 - ss_persona_instagram(persona_id ↔ ig_user_id, fb_page_id, ig_username)
+
+개발용 환경 변수(테스트 토큰)
+- `IG_LONG_LIVED_USER_TOKEN`: 장기 사용자 토큰(서버 환경변수로만 사용, 로그에 출력 금지)
 

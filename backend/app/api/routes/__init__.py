@@ -31,3 +31,9 @@ try:
     router.include_router(persona_router, tags=["personas"])
 except Exception:
     pass
+
+try:
+    from .oauth_instagram import router as ig_router
+    router.include_router(ig_router)
+except Exception:
+    pass

@@ -15,6 +15,11 @@ npm run dev -- --port 5174
 # http://localhost:5174
 ```
 
+환경 변수
+- `frontend/.env.example`을 복사하여 `frontend/.env`로 사용하세요.
+- 주의: 프론트에서는 `VITE_` 접두사가 붙은 변수만 클라이언트 코드에서 접근할 수 있습니다.
+	- 본 프로젝트에서는 `VITE_API_BASE`만 사용합니다.
+
 프록시 설정
 - `vite.config.js`에 `/auth`, `/api`, `/media`, `/user` → `http://localhost:8000` 프록시가 설정되어 있습니다.
 	- `/user`는 세션 쿠키가 실리는 동일 오리진 호출을 위해 필요합니다.

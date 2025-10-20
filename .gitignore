@@ -16,6 +16,10 @@ venv/
 backend/.venv/
 ai/mlruns/
 .env
+backend/.env
+frontend/.env
+ai/.env
+**/.env
 backend/python312-amd64.exe
 
 # Node
