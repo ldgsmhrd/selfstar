@@ -37,3 +37,15 @@ try:
     router.include_router(ig_router)
 except Exception:
     pass
+
+try:
+    from .instagram_webhook import router as ig_webhook_router
+    router.include_router(ig_webhook_router)
+except Exception:
+    pass
+
+try:
+    from .chat import router as chat_router
+    router.include_router(chat_router, tags=["chat"])
+except Exception:
+    pass

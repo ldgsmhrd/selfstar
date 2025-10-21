@@ -6,7 +6,7 @@ Run Docker services with live reload for backend, frontend, and AI.
 
 ```powershell
 # From project root
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
 - backend: uvicorn --reload (watchfiles; polling enabled for Windows)

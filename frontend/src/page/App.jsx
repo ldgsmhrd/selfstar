@@ -214,6 +214,8 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showImgcreateModal, setShowImgcreateModal] = useState(false);
   const [imgModalSize, setImgModalSize] = useState({ w: 1100, h: 760 });
+  // ProfileSelect가 열릴 때마다 목록을 최신으로 만들기 위한 refresh tick
+  const [profileSelectRefreshTick, setProfileSelectRefreshTick] = useState(0);
 
   // Imgcreate에서 저장 완료 후 ProfileSelect만 가운데 열고 Imgcreate 모달은 닫기
   useEffect(() => {
@@ -223,6 +225,8 @@ export default function App() {
       // Imgcreate 완료 시 Imgcreate 모달은 닫고 ProfileSelect 모달 오픈
       setShowImgcreateModal(false);
       setShowProfileModal(true);
+      // 새로 열릴 때 목록 새로고침
+      setProfileSelectRefreshTick((v) => v + 1);
     };
     window.addEventListener("open-profile-select", onOpenProfileSelect);
     return () => window.removeEventListener("open-profile-select", onOpenProfileSelect);
@@ -242,14 +246,24 @@ export default function App() {
   useEffect(() => {
     const onMsg = (e) => {
       const d = e?.data;
-      if (!d || d.type !== "imgcreate-size") return;
-      const vw = typeof window !== "undefined" ? window.innerWidth : 1920;
-      const vh = typeof window !== "undefined" ? window.innerHeight : 1080;
-      const maxW = Math.min(1200, Math.floor(vw * 0.96));
-      const maxH = Math.min(900, Math.floor(vh * 0.96));
-      const w = Math.min(maxW, Math.max(840, Number(d.width) || 1100));
-      const h = Math.min(maxH, Math.max(600, Number(d.height) || 760));
-      setImgModalSize({ w, h });
+      if (!d || !d.type) return;
+      if (d.type === "imgcreate-size") {
+        const vw = typeof window !== "undefined" ? window.innerWidth : 1920;
+        const vh = typeof window !== "undefined" ? window.innerHeight : 1080;
+        const maxW = Math.min(1200, Math.floor(vw * 0.96));
+        const maxH = Math.min(900, Math.floor(vh * 0.96));
+        const w = Math.min(maxW, Math.max(840, Number(d.width) || 1100));
+        const h = Math.min(maxH, Math.max(600, Number(d.height) || 760));
+        setImgModalSize({ w, h });
+        return;
+      }
+      if (d.type === "open-profile-select") {
+        if (window?.location?.pathname === "/chat") return;
+        setShowImgcreateModal(false);
+        setShowProfileModal(true);
+        setProfileSelectRefreshTick((v) => v + 1);
+        return;
+      }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
@@ -346,7 +360,13 @@ export default function App() {
             >
               ×
             </button>
-            <ProfileSelect maxSlots={4} onProfileChosen={onProfileChosen} onAddProfileClick={onAddProfileClick} />
+            <ProfileSelect
+              key={profileSelectRefreshTick}
+              maxSlots={4}
+              onProfileChosen={onProfileChosen}
+              onAddProfileClick={onAddProfileClick}
+              refreshKey={profileSelectRefreshTick}
+            />
           </div>
         </div>
       )}
