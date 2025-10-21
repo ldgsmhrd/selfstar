@@ -1,17 +1,16 @@
 services:
   ai:
-    build:
-      context: ./ai
-      dockerfile: ./serving/Dockerfile
+    image: selfstar-ai:latest
     environment:
-      - AI_REQUIRE_MODEL=0 # 개발 기본값(폴백 허용). 실제 모델 필수 시 ai/.env 또는 환경변수에서 AI_REQUIRE_MODEL=1 설정
+      - AI_REQUIRE_MODEL=1 # 개발 기본값(폴백 허용). 실제 모델 필수 시 ai/.env 또는 환경변수에서 AI_REQUIRE_MODEL=1 설정
     env_file:
       - ./ai/.env
     ports:
       - "8600:8600"
+    restart: unless-stopped
 
   backend:
-    build: ./backend
+    image: selfstar-backend:latest
     ports:
       - "8000:8000"
     env_file:
@@ -22,10 +21,12 @@ services:
       - ai
     volumes:
       - ./backend/app/media:/app/app/media
+    restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    image: selfstar-frontend:latest
     ports:
       - "5174:5174"
     env_file:
       - ./frontend/.env
+    restart: unless-stopped

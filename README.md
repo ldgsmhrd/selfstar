@@ -71,12 +71,12 @@ Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 �
 
 2) 실행
 ```powershell
-docker compose up -d --build
+docker compose up -d
 ```
 
 개발용 핫리로드(저장 시 자동 반영)
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
 3) 접속

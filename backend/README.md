@@ -138,6 +138,14 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 
 # Instagram Graph API (개발용)
 IG_LONG_LIVED_USER_TOKEN=
+
+# Meta App (Instagram OAuth)
+META_APP_ID=
+META_APP_SECRET=
+# 로컬 개발 시 http://localhost:8000/oauth/instagram/callback 을 사용하세요.
+META_REDIRECT_URI=http://localhost:8000/oauth/instagram/callback
+# 기본 스코프: 페이지/IG 조회에 필요한 최소 권한
+META_SCOPES=pages_show_list,instagram_basic
 ```
 
 ## 실행 (개발 모드)
@@ -232,14 +240,60 @@ pytest -q
 ### Instagram 연동(설계/초안)
 - `GET /oauth/instagram/start` → Meta OAuth 시작(redirect)
 - `GET /oauth/instagram/callback` → 코드 교환/장기 토큰 저장
-- `GET /oauth/instagram/accounts` → 사용자 Page/IG 비즈니스 계정 목록 반환
+- `GET /oauth/instagram/accounts` → 페르소나 전용 Page/IG 비즈니스 계정 목록 반환 (persona_num 또는 persona_id 필수)
 - `POST /oauth/instagram/link` → 특정 persona_id와 IG 계정 매핑
 - `POST /oauth/instagram/unlink` → 매핑 제거
 
 DB 권장 구조(요약)
-- ss_instagram_connector(user_id, long_lived_user_token, expires_at)
-- ss_persona_instagram(persona_id ↔ ig_user_id, fb_page_id, ig_username)
+- ss_instagram_connector(user_id, long_lived_user_token, expires_at) [개발 편의/레거시]
+	Instagram 연동은 ss_persona 테이블에서 관리합니다.
+	- 컬럼: ig_user_id, ig_username, fb_page_id, ig_linked_at
+	- 또한 persona_parameters JSON 내 instagram 섹션에도 동기화하여 하위 호환/확장에 대비합니다.
 
 개발용 환경 변수(테스트 토큰)
 - `IG_LONG_LIVED_USER_TOKEN`: 장기 사용자 토큰(서버 환경변수로만 사용, 로그에 출력 금지)
+
+## Instagram 연동 가이드(실전)
+
+1) Meta 개발자 앱 만들기
+- https://developers.facebook.com → 내 앱 → 새 앱 만들기 → 앱 유형(업무/기타) 선택 → 앱 이름/이메일 기입
+- 앱 대시보드에서 제품 추가 → “Facebook 로그인” + “Instagram Graph API” 추가
+
+2) OAuth 설정(필수)
+- Facebook 로그인 → 설정 → 유효한 OAuth 리디렉션 URI에 백엔드 콜백 주소 추가
+	- 예) 개발용: http://localhost:8000/oauth/instagram/callback
+- 앱 ID/앱 시크릿을 복사해 `backend/.env`의 `META_APP_ID`, `META_APP_SECRET`에 채웁니다.
+- `META_REDIRECT_URI`에 동일한 콜백 URL을 넣습니다.
+- 권한(스코프): `pages_show_list, instagram_basic`부터 시작하세요. 추가 권한은 게시/댓글 자동화 시 필요합니다.
+
+3) 로컬 개발 콜백/리디렉션 설정
+- 로컬 개발은 ngrok 없이 진행합니다. 아래 URL을 사용하세요:
+	- BACKEND_URL=http://localhost:8000
+	- META_REDIRECT_URI=http://localhost:8000/oauth/instagram/callback
+- Meta 앱 콘솔의 OAuth 리디렉션 URI에도 동일 콜백을 등록하세요.
+
+4) 로그인/연결 흐름
+- 백엔드가 실행 중이어야 합니다(uvicorn 또는 Docker).
+- 프론트 마이페이지 → “연동관리” → “다시 인증”을 클릭하면 `/oauth/instagram/start`로 이동합니다.
+- Meta 로그인 → 권한 승인 → 콜백 `/oauth/instagram/callback` → 서버가 Long-Lived User Token 저장 → 프론트 `/mypage?ig=connected`로 리다이렉트
+- 같은 사용자가 `/oauth/instagram/accounts`로 페이지/IG 비즈니스 계정 목록을 조회할 수 있습니다. 이때 반드시 페르소나를 지정해야 하며 해당 페르소나의 OAuth 토큰이 사용됩니다.
+- 선택한 계정은 `/oauth/instagram/link`로 persona와 매핑하세요.
+
+5) 권한/검수(프로덕션)
+- 개발 모드에서 테스트 역할(관리자/개발자/테스터)만 로그인 허용됩니다.
+- 실제 사용자 대상 출시 시, 앱 모드를 Live로 전환하고 필요한 권한에 대해 검수를 받아야 합니다.
+- 게시 자동화까지 필요하면 ‘instagram_content_publish’, ‘pages_manage_posts’ 등 추가 권한이 요구됩니다. 권한 신청 사유/동영상/테스트계정 제공 필요.
+
+트러블슈팅
+- redirect_uri mismatch: 백엔드 .env의 META_REDIRECT_URI와 Meta 콘솔 등록 값이 정확히 일치하는지 확인
+- code exchange 실패: 앱 시크릿/앱 ID/redirect_uri 값 점검. 개발 환경에서는 http://localhost:8000 콜백을 사용합니다.
+- accounts API 500: 서버에 사용자 토큰이 없으면 IG_LONG_LIVED_USER_TOKEN로 폴백합니다. 둘 다 없으면 500(server_token_missing)
+
+## Instagram 토큰 저장 정책(중요)
+
+- 이제 Instagram OAuth 토큰은 페르소나 단위로만 저장·사용합니다.
+- `/oauth/instagram/callback`은 서명된 state에서 해석된 persona가 없으면 400(persona_required)을 반환합니다.
+- `/oauth/instagram/accounts` 호출 시에도 persona 지정이 필수입니다. 지정된 페르소나의 토큰이 없으면 401(persona_oauth_required).
+- 과거 사용자 단위 토큰 테이블(`ss_instagram_connector`)은 개발 중 디버그/마이그레이션용으로만 유지합니다. 실제 런타임 경로는 `ss_instagram_connector_persona(user_id, user_persona_num, ...)`에만 의존합니다.
+
 

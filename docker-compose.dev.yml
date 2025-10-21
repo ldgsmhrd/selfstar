@@ -19,6 +19,10 @@ services:
       - CHOKIDAR_INTERVAL=200
 
   ai:
-    command: uvicorn fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
+    command: uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
     volumes:
       - ./ai/serving/fastapi_app:/app/ai/serving/fastapi_app
+    env_file:
+      - ./ai/.env
+    environment:
+      - AI_REQUIRE_MODEL=1

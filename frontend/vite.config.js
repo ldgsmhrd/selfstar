@@ -20,6 +20,7 @@ export default defineConfig({
   '/user': { target: 'http://backend:8000', changeOrigin: true, secure: false }, // legacy
   '/personas': { target: 'http://backend:8000', changeOrigin: true, secure: false },
   '/media':{ target: 'http://backend:8000', changeOrigin: true, secure: false },
+  '/chat': { target: 'http://backend:8000', changeOrigin: true, secure: false },
     },
   },
 }) 

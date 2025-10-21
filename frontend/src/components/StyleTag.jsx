@@ -47,6 +47,11 @@ function StyleTag() {
         box-shadow: 0 14px 28px rgba(45,108,223,.22);
       }
       .chip.chip-on:hover{ box-shadow: 0 18px 34px rgba(45,108,223,.28); transform: translateY(-1px); }
+
+      /* prevent overlapping native select arrow with text */
+      select{ background-position: right .75rem center; background-repeat:no-repeat; }
+      /* ensure modals and panels stack correctly */
+      .isolate{ isolation:isolate; }
     `}</style>
   );
 }
