@@ -111,7 +111,6 @@ export default function MyPage() {
           creditMax={creditMax}
           personaName={activePersona?.name}
           personaImg={activePersona?.img}
-          onOpenSelector={() => setSelectorOpen(true)}
           onOpenIntegrations={() => setIntegrationsOpen(true)}
           loadingPersona={loadingPersona}
         />
@@ -203,51 +202,6 @@ export default function MyPage() {
         </div>
       </div>
 
-      {/* Profile switcher modal */}
-      {selectorOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white/90 backdrop-blur shadow-[0_30px_70px_rgba(2,6,23,0.28)] overflow-hidden">
-            <div className="px-5 py-4 flex items-center justify-between border-b">
-              <div className="font-semibold">프로필 교체하기</div>
-              <button className="btn" onClick={() => setSelectorOpen(false)}>닫기</button>
-            </div>
-            <div className="p-5">
-              {personas?.length ? (
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                  {personas.map((p) => (
-                    <button
-                      key={p.num}
-                      onClick={() => choosePersona(p)}
-                      className={`group relative rounded-2xl border ${activePersona?.num===p.num?"border-blue-400 bg-blue-50/60":"border-slate-200 bg-white/70"} overflow-hidden text-left shadow-sm hover:shadow-md transition`}
-                    >
-                      <div className="aspect-[4/5] w-full bg-gradient-to-b from-slate-100 to-slate-50">
-                        {p.img ? (
-                          <img src={p.img} alt="persona" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full grid place-items-center text-slate-400">이미지 없음</div>
-                        )}
-                      </div>
-                      <div className="px-3 py-2 flex items-center justify-between">
-                        <div className="font-semibold truncate">{p.name || `프로필 ${p.num}`}</div>
-                        {activePersona?.num === p.num && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-100 text-blue-700 border-blue-200">선택됨</span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-10 text-slate-500">등록된 프로필이 없습니다. 새로 만들어보세요.</div>
-              )}
-              <div className="mt-5 flex items-center justify-between">
-                <button className="btn" onClick={() => setSelectorOpen(false)}>취소</button>
-                <Link to="/imgcreate" className="btn primary">새 프로필 만들기</Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Integrations modal */}
       {integrationsOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
@@ -304,17 +258,21 @@ export default function MyPage() {
       )}
     </main>
   );
-}
+}          
 
-function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenSelector, onOpenIntegrations, loadingPersona }) {
-  const guideImg = "./img/fixed_face.png";
+function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenIntegrations, loadingPersona }) {
   const pct = Math.min(100, Math.round((credit / creditMax) * 100));
   return (
     <div className="rounded-3xl border border-slate-200 bg-white/80 backdrop-blur p-6 shadow-[0_10px_30px_rgba(30,64,175,0.08)]">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="relative w-50 h-50 rounded-full overflow-hidden border border-slate-200 bg-white">
-            <img src={personaImg || guideImg} alt="" className="w-full h-full object-cover" />
+            {/* 기본 이미지 대신 빈 값 처리: 이미지가 없으면 숨김 */}
+            {personaImg ? (
+              <img src={personaImg} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-slate-100" />
+            )}
             <span className="absolute -bottom-1 -right-1 inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px]">온라인</span>
           </div>
           <div>
@@ -340,7 +298,8 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenSelec
             <div className="h-full bg-gradient-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
           </div>
           <div className="mt-3 flex gap-2">
-            <button className="btn primary grow" onClick={onOpenSelector}>프로필 교체하기</button>
+            {/* 모달 대신 페이지 이동 */}
+            <Link to="/profiles" className="btn primary grow">프로필 교체하기</Link>
             <button className="btn light" onClick={onOpenIntegrations}>연동관리</button>
           </div>
         </div>

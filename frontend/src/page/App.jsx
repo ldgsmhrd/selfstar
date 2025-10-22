@@ -8,7 +8,8 @@ import Footer from "../../components/Footer.jsx";
 import ConsentPage from "./ConsentPage.jsx";
 import UserSetup from "./UserSetup.jsx";
 import Chat from "./Chat.jsx";
-import ProfileSelect from "./ProfileSelect.jsx";
+import Profiles from "./Profiles.jsx";
+import ChatGateModal from "../components/ChatGateModal.jsx";
 
 const base = "px-3 py-1.5 rounded-full transition";
 const active = "bg-blue-600 text-white shadow";
@@ -85,7 +86,7 @@ function useAuth() {
 }
 
 /* ========================= Intro (애니메이션 추가) ========================= */
-function WelcomeIntro({ onStart, startHref = "/signup" }) {
+function WelcomeIntro({ user, onStart, onOpenGate, startHref = "/signup" }) {
   const css = `
     :root{ --brand:#2563EB; --text:#111827; --muted:#9CA3AF; --header-h:64px; }
     .intro-wrap{
@@ -162,6 +163,13 @@ function WelcomeIntro({ onStart, startHref = "/signup" }) {
   `;
 
   const handleClick = (e) => {
+    // 로그인 상태면 게이트 모달을 연다
+    if (user) {
+      e.preventDefault();
+      onOpenGate?.();
+      return;
+    }
+    // 비로그인 사용자는 가입/로그인 플로우 유지
     if (onStart) { e.preventDefault(); onStart(); }
   };
 
@@ -177,8 +185,8 @@ function WelcomeIntro({ onStart, startHref = "/signup" }) {
             <span className="word" style={{ ["--delay"]: "0.25s" }}>것을</span>{" "}
             <span className="word" style={{ ["--delay"]: "0.35s" }}>환영합니다.</span>
           </h1>
-          <div className="intro-sub">인물을 생성하여 활동해보세요.</div>
-          <a className="intro-start" href={startHref} onClick={handleClick}>시작하기</a>
+          <div className="intro-sub">{user ? "채팅을 시작해보세요." : "인물을 생성하여 활동해보세요."}</div>
+          <a className="intro-start" href={startHref} onClick={handleClick}>{user ? "채팅 시작" : "시작하기"}</a>
         </div>
         {/* 섹션 하단 안내 */}
         <div className="intro-scroll" aria-hidden="true">
@@ -191,10 +199,10 @@ function WelcomeIntro({ onStart, startHref = "/signup" }) {
 }
 
 /* ========================= Home ========================= */
-function Home({ onStart }) {
+function Home({ user, onStart, onOpenGate }) {
   return (
     <>
-      <WelcomeIntro onStart={onStart} />
+      <WelcomeIntro user={user} onStart={onStart} onOpenGate={onOpenGate} />
       <LandingSections />
     </>
   );
@@ -211,27 +219,13 @@ export default function App() {
   const navigate = useNavigate();
 
   // Chat 진입 모달 상태
-  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showGate, setShowGate] = useState(false);
   const [showImgcreateModal, setShowImgcreateModal] = useState(false);
   const [imgModalSize, setImgModalSize] = useState({ w: 1100, h: 760 });
-
-  // Imgcreate에서 저장 완료 후 ProfileSelect만 가운데 열고 Imgcreate 모달은 닫기
-  useEffect(() => {
-    const onOpenProfileSelect = () => {
-      // Chat 페이지에서는 Chat 내부에서 자체 프로필 선택 모달을 띄우므로 App 레벨 모달은 무시
-      if (window?.location?.pathname === "/chat") return;
-      // Imgcreate 완료 시 Imgcreate 모달은 닫고 ProfileSelect 모달 오픈
-      setShowImgcreateModal(false);
-      setShowProfileModal(true);
-    };
-    window.addEventListener("open-profile-select", onOpenProfileSelect);
-    return () => window.removeEventListener("open-profile-select", onOpenProfileSelect);
-  }, []);
 
   // 외부에서(예: Chat) 이미지 생성 모달을 열라는 신호
   useEffect(() => {
     const onOpenImgcreate = () => {
-      setShowProfileModal(false);
       setShowImgcreateModal(true);
     };
     window.addEventListener("open-imgcreate", onOpenImgcreate);
@@ -255,19 +249,7 @@ export default function App() {
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
-  // Chat은 라우팅 진입 후 프로필 선택을 유도할 예정(페이지 내부에서 처리)
-
-  const onProfileChosen = (name) => {
-    setShowProfileModal(false);
-    // 선택된 프로필이 있을 때만 Chat으로 이동
-    navigate("/chat", { state: { profileName: name } });
-  };
-
-  const onAddProfileClick = () => {
-    // 모달로 열되, CSS 격리를 위해 iframe으로 /imgcreate 페이지를 그대로 로드
-    setShowProfileModal(false);
-    setShowImgcreateModal(true);
-  };
+  // Chat은 /chat 진입 전 게이트 모달을 통해 진입
 
   return (
     <div className="min-h-screen flex flex-col bg-[linear-gradient(180deg,#f8fbff_0%,#ffffff_40%,#f7f7fb_100%)] text-slate-900">
@@ -282,7 +264,16 @@ export default function App() {
           </div>
           <nav className="hidden md:flex items-center gap-5 md:gap-7 text-sm font-semibold ml-36">
             <NavLink to="/" end className={({ isActive }) => `${base} ${isActive ? active : idle}`}>홈</NavLink>
-            <NavLink to="/chat" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>채팅</NavLink>
+            <NavLink
+              to="/chat"
+              className={({ isActive }) => `${base} ${isActive ? active : idle}`}
+              onClick={(e) => {
+                // 로그인 사용자는 헤더에서 채팅 클릭 시에도 게이트 모달을 먼저 띄움
+                if (user) { e.preventDefault(); setShowGate(true); }
+              }}
+            >
+              채팅
+            </NavLink>
             <NavLink to="/mypage" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>마이페이지</NavLink>
             <NavLink to="/alerts" className={({ isActive }) => `${base} ${isActive ? active : idle}`}>알림</NavLink>
           </nav>
@@ -312,12 +303,13 @@ export default function App() {
       {/* Routes */}
   <main className={isEmbed ? "" : "flex-1"}>
         <Routes>
-          <Route path="/" element={<Home onStart={undefined} />} />
+          <Route path="/" element={<Home user={user} onStart={undefined} onOpenGate={() => setShowGate(true)} />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/consent" element={<ConsentPage />} />
           <Route path="/setup" element={<UserSetup />} />
           {/* Imgcreate는 모달로도 띄우지만, 라우트 직접 접근도 허용 */}
           <Route path="/imgcreate" element={<Imgcreate />} />
+          <Route path="/profiles" element={<Profiles />} />
           <Route path="/chat" element={<Chat />} />
           <Route
             path="/mypage"
@@ -331,24 +323,12 @@ export default function App() {
         </Routes>
       </main>
 
-      {/* ProfileSelect 모달: 가운데 정렬 (채팅 클릭 or 저장 완료 시) */}
-      {!isEmbed && showProfileModal && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}
-        >
-          <div style={{ position: "relative", width: "min(1200px, 98vw)", maxHeight: "90dvh", overflow: "hidden", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }}>
-            <button
-              aria-label="닫기"
-              onClick={() => setShowProfileModal(false)}
-              style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}
-            >
-              ×
-            </button>
-            <ProfileSelect maxSlots={4} onProfileChosen={onProfileChosen} onAddProfileClick={onAddProfileClick} />
-          </div>
-        </div>
+      {/* Chat 진입 게이트 모달 */}
+      {!isEmbed && user && showGate && (
+        <ChatGateModal
+          onCancel={() => setShowGate(false)}
+          onConfirm={() => { setShowGate(false); navigate("/chat"); }}
+        />
       )}
 
       {/* Imgcreate 모달: 동일 출처 iframe으로 페이지 자체를 내장 렌더링(스타일 붕괴 방지) */}
