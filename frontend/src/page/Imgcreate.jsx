@@ -281,20 +281,27 @@ function Home({ compact = false }) {
         const t = await savePersona.text().catch(() => "");
         throw new Error(`페르소나 저장 실패: ${savePersona.status} ${t || ""}`.trim());
       }
-      const savedPersona = await savePersona.json();
-      if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
+  const savedPersona = await savePersona.json();
+  if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
+  const personaNum = savedPersona?.persona_num;
 
       setStatus("프로필/페르소나 저장 완료");
-      // 저장 완료 후, 상위(App)에게 프로필 선택 모달 열도록 신호
+      // 저장 완료 후: 새 프로필 번호를 Chat에 바로 전달하여 이미지 생성까지 이어갈 수 있도록 이벤트 발행
       try {
+        if (typeof personaNum === "number") {
+          // 로컬(동일 윈도우) 이벤트: 출처 표기(from: 'imgcreate')
+          window.dispatchEvent(new CustomEvent("persona-created", { detail: { persona_num: personaNum, from: "imgcreate" } }));
+          // iframe 부모 창에도 postMessage로 알림
+          if (window.parent && window.parent !== window) {
+            window.parent.postMessage({ type: "persona-created", persona_num: personaNum, from: "imgcreate" }, "*");
+          }
+        }
+        // 또한 프로필 선택 모달도 새로 띄워 최신 목록 확인 가능
         window.dispatchEvent(new CustomEvent("open-profile-select"));
-        // 임베드(iframe)일 경우 부모에도 알림
         if (window.parent && window.parent !== window) {
           window.parent.postMessage({ type: "open-profile-select" }, "*");
         }
-      } catch {
-        /* noop */
-      }
+      } catch { /* noop */ }
     } catch (e) {
       setError(e?.message || String(e));
     } finally {

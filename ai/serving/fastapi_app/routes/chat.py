@@ -20,6 +20,88 @@ log = logging.getLogger("ai-chat")
 _client = None
 _jobs: Dict[str, Dict] = {}
 
+# Optional LangSmith tracing
+LS_ENABLED = False
+LS_PROJECT = os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT") or "Selfstar.AI"
+try:
+    _ls_flag = (os.getenv("LANGSMITH_TRACING") or os.getenv("LANGCHAIN_TRACING_V2") or "false").strip().lower()
+    LS_ENABLED = _ls_flag in ("1", "true", "yes")
+    if LS_ENABLED:
+        from langsmith import Client as LSClient  # type: ignore
+        from langsmith.run_trees import RunTree  # type: ignore
+    else:
+        LSClient = None  # type: ignore
+        RunTree = None  # type: ignore
+except Exception:
+    LS_ENABLED = False
+    LSClient = None  # type: ignore
+    RunTree = None  # type: ignore
+
+def _start_run(name: str, inputs: dict, ls_session_id: Optional[str] = None):
+    if not LS_ENABLED or RunTree is None:
+        return None
+    try:
+        client = LSClient()
+        tags = []
+        metadata = {"app": "selfstar-ai"}
+        if ls_session_id:
+            tags.append(f"session:{ls_session_id}")
+            metadata["ls_session_id"] = ls_session_id
+        rt = RunTree(name=name, run_type="chain", inputs=inputs, project_name=LS_PROJECT, tags=tags, metadata=metadata)
+        return (rt, client)
+    except Exception:
+        return None
+
+
+@router.post("/chat/trace/heartbeat")
+async def chat_trace_heartbeat(body: dict | None = None):
+    """Create a tiny LangSmith run immediately, so the project appears right away.
+    Safe no-op when tracing is disabled or langsmith is not installed.
+    """
+    try:
+        ls_session_id = None
+        if isinstance(body, dict):
+            ls_session_id = body.get("ls_session_id")
+        rt_client = _start_run(
+            name="session_heartbeat",
+            inputs={"msg": "chat session opened"},
+            ls_session_id=ls_session_id,
+        )
+        if not rt_client:
+            return {
+                "ok": False,
+                "ls": "disabled",
+                "ls_enabled": bool(LS_ENABLED),
+                "have_api_key": bool(os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY")),
+                "project": LS_PROJECT,
+            }
+        rt, lsc = rt_client
+        rt.end(outputs={"ok": True})
+        try:
+            rt.post(lsc)
+            posted = True
+        except Exception as e:
+            # Even if posting fails, don't break the app
+            posted = False
+            err = str(e)
+            return {
+                "ok": False,
+                "posted": posted,
+                "error": err,
+                "ls_enabled": bool(LS_ENABLED),
+                "have_api_key": bool(os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY")),
+                "project": LS_PROJECT,
+            }
+        return {
+            "ok": True,
+            "posted": True,
+            "ls_enabled": bool(LS_ENABLED),
+            "have_api_key": bool(os.getenv("LANGSMITH_API_KEY") or os.getenv("LANGCHAIN_API_KEY")),
+            "project": LS_PROJECT,
+        }
+    except Exception:
+        return {"ok": False, "ls_enabled": bool(LS_ENABLED)}
+
 
 def _get_client():
     global _client
@@ -125,6 +207,8 @@ class ChatImageRequest(BaseModel):
     user_text: str = Field(..., min_length=1)
     persona_img: Optional[str] = None  # URL or data URI
     persona: Optional[str] = None      # persona data stringified if any
+    ls_session_id: Optional[str] = None
+    style_img: Optional[str] = None    # Optional: outfit/style reference image
 
 
 class ChatImageResponse(BaseModel):
@@ -157,9 +241,9 @@ def _placeholder_image_data_uri(text: str) -> str:
     return f"data:image/png;base64,{tiny_png_b64}"
 
 
-def _build_meta_prompt(persona: str, user_text: str) -> str:
+def _build_meta_prompt(persona: str, user_text: str, has_style_img: bool) -> str:
     # Exact meta-prompt copied from the notebook `create_img_original`
-    return f"""
+    return  f"""
 Keep left-right orientation exactly as in the reference (no mirroring).
 You are an expert prompt engineer for photorealistic image generation.
 Your task is to create a detailed, natural English prompt for the Nanobanana image model.
@@ -171,33 +255,33 @@ Use the information below:
 Follow these strict rules:
 
 1. Identity Preservation:
-     - The provided reference image and persona data define the subject’s **exact face, hairstyle, and body shape**.
-     - Do NOT alter or reinterpret the face, eyes, skin tone, hairstyle, or body type,
-         even if the user request suggests such changes.
-     - Ignore any text that implies modifying facial or physical traits.
+   - The provided reference image and persona data define the subject’s **exact face, hairstyle, and body shape**.
+   - Do NOT alter or reinterpret the face, eyes, skin tone, hairstyle, or body type,
+     even if the user request suggests such changes.
+   - Ignore any text that implies modifying facial or physical traits.
 
 2. Context and Action:
-     - Interpret the user request carefully to describe the **environment, location, and main action** clearly.
-     - Incorporate only contextual or behavioral changes (e.g., background, pose, action),
-         not appearance changes.
-     - Ensure the description sounds natural and coherent.
+   - Interpret the user request carefully to describe the **environment, location, and main action** clearly.
+   - Incorporate only contextual or behavioral changes (e.g., background, pose, action),
+     not appearance changes.
+   - Ensure the description sounds natural and coherent.
 
 3. Realism and Style:
-     - The final image must look **ultra-realistic**, as if taken with a real camera.
-     - Use natural lighting, realistic proportions, and lifelike skin texture.
-     - Avoid cartoon, illustration, painterly, or artificial styles.
+   - The final image must look **ultra-realistic**, as if taken with a real camera.
+   - Use natural lighting, realistic proportions, and lifelike skin texture.
+   - Avoid cartoon, illustration, painterly, or artificial styles.
 
 4. Perspective and Composition:
-     - If the request includes “selfie”, “셀카”, or “셀피” → use a **first-person camera angle**
-         where the subject’s arm or hand naturally holds a phone.
-     - If the request includes “사진을 찍는 모습” → use a **third-person camera angle**
-         showing the subject being photographed.
-     - Maintain realistic anatomy, perspective, and camera framing.
+   - If the request includes “selfie”, “셀카”, or “셀피” → use a **first-person camera angle**
+     where the subject’s arm or hand naturally holds a phone.
+   - If the request includes “사진을 찍는 모습” → use a **third-person camera angle**
+     showing the subject being photographed.
+   - Maintain realistic anatomy, perspective, and camera framing.
 
 5. Negative Prompts:
-     - no cartoon, no illustration, no AI artifacts, no surreal distortion,
-         no unrealistic retouching, no duplicated faces, no unnatural anatomy,
-         no text, no watermark, no gender or hairstyle change.
+   - no cartoon, no illustration, no AI artifacts, no surreal distortion,
+     no unrealistic retouching, no duplicated faces, no unnatural anatomy,
+     no text, no watermark, no gender or hairstyle change.
 
 Output:
 Generate one single, ready-to-use, English prompt describing a high-resolution, photorealistic PNG image
@@ -205,6 +289,24 @@ that perfectly depicts "{user_text}" while keeping the person’s face, hairstyl
 to the original reference and persona data.
 Only output the final image generation prompt — no explanations.
 """.strip()
+
+
+def _with_outfit_lock_prompt(base_prompt: str, has_style_img: bool) -> str:
+    """Do not modify the meta prompt; instead, append a concise outfit-lock contract
+    only for the final image-generation prompt when a style image is provided.
+    """
+    if not has_style_img:
+        return base_prompt.strip()
+    lock = (
+        "\n\nIMPORTANT — Outfit Lock (style image provided):\n"
+        "- Use the additional image ONLY as a clothing reference; DO NOT copy face/body/background.\n"
+        "- Exactly reproduce the SAME OUTFIT: category, structure, silhouette, color, pattern, fabric/texture, length, neckline/collar, sleeves, slits/closures, trims.\n"
+        "- Do NOT change outfit category or layers (no dress↔top+pants, no skirt↔pants, no add/remove jackets/cardigans).\n"
+        "- Do NOT change color/material/pattern. If any conflict with the prompt exists, the OUTFIT RULES TAKE PRIORITY.\n"
+        "- Strict negatives: no outfit change, no wardrobe swap, no different garments, no adding/removing layers, no color/material alteration.\n"
+        "- REPEAT: Keep the exact same outfit as the style reference. Keep the exact same outfit. Keep the exact same outfit.\n"
+    )
+    return (base_prompt.strip() + lock)
 
 
 async def _fetch_image_bytes(uri_or_url: str) -> Tuple[bytes, str]:
@@ -241,14 +343,25 @@ async def chat_image(req: ChatImageRequest):
         require_model = (
             os.getenv("AI_REQUIRE_MODEL", "1").strip().lower() in ("1", "true", "yes")
         )
+        # Start LangSmith run (session-tagged) if enabled
+        rt_client = _start_run(
+            name="chat_image",
+            inputs={"user_text": req.user_text, "has_persona_img": bool(req.persona_img)},
+            ls_session_id=req.ls_session_id,
+        )
+        if rt_client:
+            rt, lsc = rt_client
+        else:
+            rt = lsc = None
         # Attempt client; may fail if key missing
         try:
             client = _get_client()
         except Exception as e:
             client = None
+
         persona_text = req.persona or ""
         # Build the notebook meta-prompt and improve it with a text model (2-step flow)
-        meta_prompt = _build_meta_prompt(persona_text, req.user_text)
+        meta_prompt = _build_meta_prompt(persona_text, req.user_text, bool(req.style_img))
 
         generated_prompt = ""
         if client is not None:
@@ -267,6 +380,8 @@ async def chat_image(req: ChatImageRequest):
                 generated_prompt = (generated_prompt or "").strip()
                 if not generated_prompt:
                     raise RuntimeError("llm_returned_empty_prompt")
+                if rt:
+                    rt.create_child(name="meta_prompt", run_type="llm", inputs={"meta": meta_prompt}).end(outputs={"final_prompt": generated_prompt})
             except Exception as e:
                 if require_model:
                     raise HTTPException(status_code=500, detail=f"llm_generate_failed: {e}")
@@ -295,23 +410,38 @@ async def chat_image(req: ChatImageRequest):
             log.warning("persona image fetch failed, using placeholder: %s", e)
             persona_bytes, persona_mime = b"", "image/jpeg"
 
+        # Optional style/outfit reference image
+        style_bytes: Optional[bytes] = None
+        style_mime: str = "image/jpeg"
+        if req.style_img:
+            try:
+                style_bytes, style_mime = await _fetch_image_bytes(req.style_img)
+            except Exception as e:
+                log.warning("style image fetch failed, skipping: %s", e)
+                style_bytes = None
+
         if client is not None:
             # 3) Call image model with TEXT + IMAGE (inline_data) as in the notebook
             try:
+                final_prompt = _with_outfit_lock_prompt(generated_prompt, bool(req.style_img))
+                # Order matters slightly in some models: place style before persona to bias outfit, while persona still preserves identity.
+                contents = [types.Part.from_text(text=final_prompt)]
+                if style_bytes:
+                    contents.append(types.Part.from_bytes(data=style_bytes, mime_type=style_mime))
+                contents.append(types.Part.from_bytes(data=persona_bytes, mime_type=persona_mime))
                 img_resp = client.models.generate_content(
                     model=GEMINI_IMAGE_MODEL,
-                    contents=[
-                        types.Part.from_text(text=generated_prompt),
-                        types.Part.from_bytes(data=persona_bytes, mime_type=persona_mime),
-                    ],
+                    contents=contents,
                     config=types.GenerateContentConfig(
                         response_modalities=[types.Modality.IMAGE],
                         candidate_count=1,
-                        temperature=0.6,
-                        top_p=0.9,
+                        temperature=0.08,
+                        top_p=0.3,
                         max_output_tokens=2048,
                     ),
                 )
+                if rt:
+                    rt.create_child(name="image_generate", run_type="llm", inputs={"prompt": final_prompt, "had_style_img": bool(req.style_img)}).end(outputs={"status": "requested"})
             except Exception as e:
                 if require_model:
                     raise HTTPException(status_code=500, detail=f"image_generate_failed: {e}")
@@ -358,21 +488,43 @@ async def chat_image(req: ChatImageRequest):
                     raise HTTPException(status_code=502, detail="image_not_returned")
                 # Fallback to placeholder
                 data_uri = _placeholder_image_data_uri(req.user_text)
+                if rt:
+                    rt.end(outputs={"ok": True, "fallback": True})
+                    rt.post(lsc)
                 return ChatImageResponse(ok=True, prompt=generated_prompt, image=data_uri)
             else:
                 # Normal successful generation path
                 data_uri = f"data:{out_mime};base64,{base64.b64encode(out_bytes).decode('ascii')}"
+                if rt:
+                    rt.end(outputs={"ok": True, "image_mime": out_mime, "image_len": len(out_bytes)})
+                    rt.post(lsc)
                 return ChatImageResponse(ok=True, prompt=generated_prompt, image=data_uri)
         else:
             # Fallback placeholder image
             if require_model:
                 raise HTTPException(status_code=503, detail="model_unavailable")
             data_uri = _placeholder_image_data_uri(req.user_text)
+            if rt:
+                rt.end(outputs={"ok": True, "fallback": True})
+                rt.post(lsc)
             return ChatImageResponse(ok=True, prompt=generated_prompt, image=data_uri)
     except HTTPException:
+        # Pass-through but try to mark error in run
+        try:
+            if rt:
+                rt.end(error=True)
+                rt.post(lsc)
+        except Exception:
+            pass
         raise
     except Exception as e:
         log.error("/chat/image failed: %s\n%s", e, traceback.format_exc())
+        try:
+            if rt:
+                rt.end(error=True, outputs={"exception": str(e)})
+                rt.post(lsc)
+        except Exception:
+            pass
         raise HTTPException(status_code=500, detail={"error": "chat_image_failed", "message": str(e)})
 
 

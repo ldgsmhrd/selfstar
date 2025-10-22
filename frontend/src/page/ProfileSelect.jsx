@@ -7,7 +7,7 @@ import { useNavigate, Link } from "react-router-dom";
  * Props (optional):
  * - maxSlots?: number                        // 기본 4
  */
-export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick, compact = false, refreshKey }) {
+export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick, compact = false, refreshKey, autoPickNum }) {
   const navigate = useNavigate();
   // 내부 모델: { type: "profile" | "add" | "locked", name?: string, img?: string, num?: number }
   const [tiles, setTiles] = useState(() => Array.from({ length: maxSlots }, (_, i) => (i === 0 ? { type: "add" } : { type: "locked" })));
@@ -39,9 +39,9 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
-        const items = Array.isArray(data?.items) ? data.items : [];
-        // 안전 정렬
-        items.sort((a, b) => (a.num || 0) - (b.num || 0));
+  const items = Array.isArray(data?.items) ? data.items : [];
+  // 낮은 num 먼저(오래된 → 새로운). num이 클수록 뒤로 가도록 오름차순 정렬
+  items.sort((a, b) => (a.num || 0) - (b.num || 0));
         setPersonas(items);
       } catch {
         /* noop */
@@ -98,6 +98,25 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
       navigate("/imgcreate", { state: { profileName: tile.name } });
     }
   };
+
+  // If autoPickNum is provided and exists in personas, auto-select and confirm
+  useEffect(() => {
+    if (autoPickNum == null) return;
+    // find index in current tiles
+    const idx = tiles.findIndex(t => t.type === "profile" && Number(t.num) === Number(autoPickNum));
+    if (idx >= 0) {
+      setSelectedIndex(idx);
+      // slight delay to ensure UI ready, then auto-start
+      const tm = setTimeout(() => {
+        const tile = tiles[idx];
+        if (tile && tile.type === "profile") {
+          const payload = { name: tile.name, num: tile.num, img: tile.img };
+          if (typeof onProfileChosen === "function") onProfileChosen(payload);
+        }
+      }, 50);
+      return () => clearTimeout(tm);
+    }
+  }, [autoPickNum, tiles, onProfileChosen]);
 
   return (
     <div className={`page ${compact ? "is-compact" : ""}`}>
