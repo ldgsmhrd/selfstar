@@ -46,7 +46,7 @@ async def put_my_persona(payload: PersonaUpsert, request: Request):
             pp_keys = []
         log.info("PUT /personas/setting by user_id=%s img=%s params_keys=%s", user_id, payload.persona_img, pp_keys)
 
-        persona_id = await create_persona(
+        persona_id, persona_num = await create_persona(
             user_id=int(user_id),
             persona_img=payload.persona_img,
             persona_parameters=payload.persona_parameters,
@@ -59,6 +59,6 @@ async def put_my_persona(payload: PersonaUpsert, request: Request):
         log.exception("Failed to save persona for user_id=%s: %s", user_id, e)
         raise HTTPException(status_code=500, detail=f"Failed to save persona: {e}")
 
-    return {"ok": True, "persona_id": int(persona_id)}
+    return {"ok": True, "persona_id": int(persona_id), "persona_num": int(persona_num)}
 
 

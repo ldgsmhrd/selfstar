@@ -26,3 +26,4 @@ services:
       - ./ai/.env
     environment:
       - AI_REQUIRE_MODEL=1
+      - WATCHFILES_FORCE_POLLING=1

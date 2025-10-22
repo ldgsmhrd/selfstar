@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Body
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional
 import os
@@ -18,7 +18,8 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    persona_num: Optional[int] = Field(None, ge=1, le=4)
+    # Allow any positive persona_num; do not cap at 4 to support growing persona lists
+    persona_num: Optional[int] = Field(None, ge=1)
     messages: List[ChatMessage] = Field(default_factory=list)
 
 
@@ -91,8 +92,12 @@ async def send_usage():
 
 
 class ChatImageRequest(BaseModel):
-    persona_num: int = Field(..., ge=1, le=4)
+    # Allow any positive persona_num; previously capped at 4 which blocked new personas (e.g., 5+)
+    persona_num: int = Field(..., ge=1)
     user_text: str = Field(..., min_length=1)
+    ls_session_id: Optional[str] = None
+    # Optional style reference image (data URI or URL). Used to transfer clothing/outfit.
+    style_img: Optional[str] = None
 
 
 @router.post("/image")
@@ -166,6 +171,8 @@ async def image(req: ChatImageRequest, request: Request):
         "user_text": req.user_text,
         "persona_img": persona_img_norm,
         "persona": persona_params_json or "",
+        "ls_session_id": req.ls_session_id,
+        "style_img": req.style_img,
     }
     log.info("/chat/image forwarding -> user_id=%s persona_num=%s", user_id, req.persona_num)
     try:
@@ -197,7 +204,41 @@ async def image_usage():
         "usage": {
             "url": "/chat/image",
             "headers": {"Content-Type": "application/json"},
-            "body": {"persona_num": 1, "user_text": "패션쇼 무드의 블랙 드레스"},
+            "body": {"persona_num": 1, "user_text": "패션쇼 무드의 블랙 드레스", "ls_session_id": "<optional>", "style_img": "<optional data-uri or url>"},
         },
         "note": "세션 로그인이 필요합니다. 프론트엔드에서 '이미지 생성' 버튼을 눌러 호출하세요.",
     }
+
+
+@router.post("/session/start")
+async def start_chat_session(request: Request):
+    """채팅 진입 시 LangSmith 세션을 구분하기 위한 임시 세션 ID 발급."""
+    import uuid, time
+    sid = str(uuid.uuid4())
+    try:
+        if hasattr(request, "session"):
+            request.session["ls_session_id"] = sid
+    except Exception:
+        pass
+    # Fire-and-forget heartbeat to AI so LangSmith project appears immediately (if enabled)
+    try:
+        ai_url = (os.getenv("AI_SERVICE_URL") or "http://ai:8600").rstrip("/")
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.post(f"{ai_url}/chat/trace/heartbeat", json={"ls_session_id": sid})
+    except Exception:
+        # Non-fatal: just ignore if AI is not reachable
+        pass
+    return {"ok": True, "ls_session_id": sid, "started_at": int(time.time())}
+
+
+@router.post("/session/end")
+async def end_chat_session(request: Request, body: dict = Body(default={})): 
+    """채팅 종료 시 세션 정리."""
+    sid = None
+    try:
+        sid = body.get("ls_session_id") if isinstance(body, dict) else None
+        if not sid and hasattr(request, "session"):
+            sid = request.session.pop("ls_session_id", None)
+    except Exception:
+        pass
+    return {"ok": True, "ls_session_id": sid}

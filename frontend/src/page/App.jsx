@@ -220,12 +220,12 @@ export default function App() {
   // Imgcreate에서 저장 완료 후 ProfileSelect만 가운데 열고 Imgcreate 모달은 닫기
   useEffect(() => {
     const onOpenProfileSelect = () => {
-      // Chat 페이지에서는 Chat 내부에서 자체 프로필 선택 모달을 띄우므로 App 레벨 모달은 무시
-      if (window?.location?.pathname === "/chat") return;
-      // Imgcreate 완료 시 Imgcreate 모달은 닫고 ProfileSelect 모달 오픈
+      // Imgcreate 완료 시 항상 크리에이터 모달은 닫는다
       setShowImgcreateModal(false);
+      // Chat 페이지에서는 App 레벨 모달 대신 Chat 내부 모달이 열려야 하므로 여기서 끝낸다
+      if (window?.location?.pathname === "/chat") return;
+      // 그 외 페이지에서는 App 레벨 ProfileSelect 모달 오픈
       setShowProfileModal(true);
-      // 새로 열릴 때 목록 새로고침
       setProfileSelectRefreshTick((v) => v + 1);
     };
     window.addEventListener("open-profile-select", onOpenProfileSelect);
@@ -257,8 +257,15 @@ export default function App() {
         setImgModalSize({ w, h });
         return;
       }
+      if (d.type === "persona-created") {
+        // 새 프로필 생성 완료: 크리에이터 모달 닫고 프로필 선택 모달을 연다
+        try { setShowImgcreateModal(false); } catch {}
+        setShowProfileModal(true);
+        setProfileSelectRefreshTick((v) => v + 1);
+        return;
+      }
       if (d.type === "open-profile-select") {
-        if (window?.location?.pathname === "/chat") return;
+        // 항상 App 레벨 프로필 선택 모달을 연다
         setShowImgcreateModal(false);
         setShowProfileModal(true);
         setProfileSelectRefreshTick((v) => v + 1);
@@ -269,12 +276,28 @@ export default function App() {
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
+  // 임베드가 아닌 경우(직접 /imgcreate 라우팅)에도 'persona-created' 이벤트를 수신해 처리
+  useEffect(() => {
+    const onPersonaCreated = () => {
+      // 라우트로 연 경우에도 동일하게 프로필 선택 모달을 연다
+      setShowImgcreateModal(false);
+      setShowProfileModal(true);
+      setProfileSelectRefreshTick((v) => v + 1);
+    };
+    window.addEventListener("persona-created", onPersonaCreated);
+    return () => window.removeEventListener("persona-created", onPersonaCreated);
+  }, []);
+
   // Chat은 라우팅 진입 후 프로필 선택을 유도할 예정(페이지 내부에서 처리)
 
-  const onProfileChosen = (name) => {
+  const onProfileChosen = (payload) => {
+    // payload: { name, num, img }
     setShowProfileModal(false);
-    // 선택된 프로필이 있을 때만 Chat으로 이동
-    navigate("/chat", { state: { profileName: name } });
+    // Chat으로 이동 후 선택 이벤트 전달
+    navigate("/chat");
+    setTimeout(() => {
+      try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: payload })); } catch {}
+    }, 50);
   };
 
   const onAddProfileClick = () => {
