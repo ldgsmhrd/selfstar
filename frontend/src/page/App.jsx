@@ -9,6 +9,7 @@ import ConsentPage from "./ConsentPage.jsx";
 import UserSetup from "./UserSetup.jsx";
 import Chat from "./Chat.jsx";
 import ProfileSelect from "./ProfileSelect.jsx";
+import Alerts from "./Alerts.jsx";
 
 const base = "px-3 py-1.5 rounded-full transition";
 const active = "bg-blue-600 text-white shadow";
@@ -440,15 +441,7 @@ function Private({ user, children }) {
   );
 }
 
-/* ========================= 단순 알림 페이지 ========================= */
-function Alerts() {
-  return (
-    <div className="mx-auto max-w-4xl px-6 py-12">
-      <h2 className="text-xl font-bold mb-2">알림</h2>
-      <p className="text-slate-600">알림 기능은 준비 중입니다.</p>
-    </div>
-  );
-}
+/* (알림 페이지는 별도 파일 Alerts.jsx로 분리) */
 
 /* ========================= UI Utilities ========================= */
 // 제거: 모달/팝오버 관련 컴포넌트는 더 이상 사용하지 않음

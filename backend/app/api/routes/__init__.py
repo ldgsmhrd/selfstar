@@ -45,6 +45,24 @@ except Exception:
     pass
 
 try:
+    from .files import router as files_router
+    router.include_router(files_router)
+except Exception:
+    pass
+
+try:
+    from .instagram_publish import router as ig_publish_router
+    router.include_router(ig_publish_router)
+except Exception:
+    pass
+
+try:
+    from .instagram_comments import router as ig_comments_router
+    router.include_router(ig_comments_router)
+except Exception:
+    pass
+
+try:
     from .chat import router as chat_router
     router.include_router(chat_router, tags=["chat"])
 except Exception:

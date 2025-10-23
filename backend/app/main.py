@@ -124,8 +124,8 @@ try:
 except Exception as e:
     logger.warning(f"No api_router found in app.api.routes: {e}")
 
-# ===== Static media (/media) =====
-# 기본 저장 경로를 앱 폴더 내부 media/로 설정 (환경변수 MEDIA_ROOT로 오버라이드 가능)
+# ===== Static mounts =====
+# media (기존 자산)
 _DEFAULT_MEDIA = os.path.join(os.path.dirname(__file__), "media")
 MEDIA_ROOT = os.getenv("MEDIA_ROOT") or _DEFAULT_MEDIA
 try:
@@ -139,17 +139,24 @@ try:
 except Exception as _e:
     logger.error(f"Failed to mount /media: {_e}")
 
+# files (신규: 생성 이미지/로컬 저장용, media와 분리)
+_DEFAULT_FILES = os.path.join(os.path.dirname(__file__), "storage")
+FILES_ROOT = os.getenv("FILES_ROOT") or _DEFAULT_FILES
+try:
+    os.makedirs(FILES_ROOT, exist_ok=True)
+except Exception as _e:
+    logger.error(f"Failed to create files directory {FILES_ROOT}: {_e}")
+
+try:
+    app.mount("/files", StaticFiles(directory=FILES_ROOT), name="files")
+    logger.info(f"Mounted static files at /files -> {FILES_ROOT}")
+except Exception as _e:
+    logger.error(f"Failed to mount /files: {_e}")
+
 # ===== Health =====
 @app.get("/")
 def root():
     return {"message": "Welcome to the API!"}
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
 
 # (디버그) 등록된 경로를 보려면 /__routes 로 확인 가능
 @app.get("/__routes")

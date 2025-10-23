@@ -34,6 +34,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/app/media:/app/app/media
+      - ./backend/app/storage:/app/app/storage
     restart: unless-stopped
 
   frontend:
