@@ -36,7 +36,7 @@ function Home({ compact = false }) {
     };
   }, [isEmbed]);
   // 기본 필드
-  const [name, setName] = useState("이빛나");
+  const [name, setName] = useState("");
   const [gender, setGender] = useState("여");
   const [age, setAge] = useState(23);
 
@@ -116,7 +116,7 @@ function Home({ compact = false }) {
       bodyType,
       glasses,
       personalities,
-    ],
+    ]
   );
 
   // 마지막 생성 이후로 입력이 변경되었는지
@@ -364,7 +364,6 @@ function Home({ compact = false }) {
                   className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="이빛나"
                 />
               </Field>
 
@@ -411,6 +410,7 @@ function Home({ compact = false }) {
                     value={glasses}
                     onChange={(e) => setGlasses(e.target.value)}
                   >
+                    <option value="">선택</option>
                     <option value="">선택</option>
                     <option value="없음">없음</option>
                     <option value="있음">있음</option>
