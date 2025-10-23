@@ -1,6 +1,7 @@
 // App.jsx
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Routes, Route, NavLink, Link, useNavigate, useLocation } from "react-router-dom";
+import { API_BASE } from "@/api/client";
 import Signup from "./Signup.jsx";
 import Imgcreate from "./Imgcreate.jsx";
 import MyPage from "./MyPage.jsx";
@@ -11,6 +12,10 @@ import Chat from "./Chat.jsx";
 import Alerts from "./Alerts.jsx";
 import Profiles from "./Profiles.jsx";
 import ChatGateModal from "../components/ChatGateModal.jsx";
+import Dashboard from "./Dashboard.jsx";
+import DashboardInsights from "./DashboardInsights.jsx";
+import DashboardPostInsights from "./DashboardPostInsights.jsx";
+import PostInsightDetail from "./PostInsightDetail.jsx";
 
 const base = "px-3 py-1.5 rounded-full transition";
 const active = "bg-blue-600 text-white shadow";
@@ -25,8 +30,7 @@ import heroImg from "../../img/hero.png";
 import step2Img from "../../img/step2.png";
 import step3Img from "../../img/step3.png";
 
-// Backend API base for auth and routes
-const API = "http://localhost:8000";
+// Backend API base comes from .env (VITE_API_BASE); empty string in dev uses Vite proxy
 
 /* =============== 세션 사용자 훅 =============== */
 function useAuth() {
@@ -40,7 +44,7 @@ function useAuth() {
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
       setLoading(true);
-      const res = await fetch(`${API}/auth/me`, {
+  const res = await fetch(`${API_BASE}/auth/me`, {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
@@ -63,7 +67,7 @@ function useAuth() {
 
   const logout = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" });
+      const res = await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
       if (res.ok || res.status === 204) { setUser(null); setError(null); }
       else { setError(`로그아웃 실패: HTTP ${res.status}`); }
     } catch (e) {
@@ -328,6 +332,10 @@ export default function App() {
           <Route path="/imgcreate" element={<Imgcreate />} />
           <Route path="/profiles" element={<Profiles />} />
           <Route path="/chat" element={<Chat />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/dashboard/insights" element={<Dashboard />} />
+          <Route path="/dashboard/post-insights" element={<Dashboard />} />
+          <Route path="/dashboard/post-insights/:id" element={<PostInsightDetail />} />
           <Route
             path="/mypage"
             element={

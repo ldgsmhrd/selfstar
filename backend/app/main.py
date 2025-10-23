@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.schemas.health import HealthResponse
 from urllib.parse import urlparse
+import asyncio
 
 # .env 파일 로드 순서 (컨테이너/로컬 모두에서 동작)
 # - 앱 디렉터리: /app/app
@@ -171,3 +172,48 @@ def health():
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+# ===== Background: Daily insights snapshot =====
+async def _daily_snapshot_loop():
+    """Run once a day: iterate linked personas and perform snapshot."""
+    # Lazy imports to avoid circular
+    from app.api.core.mysql import get_mysql_pool
+    from app.api.routes.instagram_insights import perform_snapshot
+    import aiomysql
+    while True:
+        try:
+            pool = await get_mysql_pool()
+            personas = []
+            async with pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    # ss_persona에 IG가 연결되어 있고, persona 토큰도 존재하는 페르소나만
+                    await cur.execute(
+                        """
+                        SELECT p.user_id, p.user_persona_num
+                        FROM ss_persona p
+                        JOIN ss_instagram_connector_persona t
+                          ON t.user_id = p.user_id AND t.user_persona_num = p.user_persona_num
+                        WHERE p.ig_user_id IS NOT NULL
+                        LIMIT 500
+                        """
+                    )
+                    personas = await cur.fetchall() or []
+            for row in personas:
+                try:
+                    await perform_snapshot(int(row["user_id"]), int(row["user_persona_num"]))
+                except Exception:
+                    # non-fatal; continue others
+                    pass
+        except Exception:
+            pass
+        # sleep until next run (~24h). Start quickly next day; if server restarts midday, still runs 24h cadence.
+        await asyncio.sleep(60 * 60 * 24)
+
+
+@app.on_event("startup")
+async def _start_background_tasks():
+    # fire-and-forget daily loop
+    try:
+        asyncio.create_task(_daily_snapshot_loop())
+    except Exception:
+        pass
