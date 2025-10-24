@@ -1,0 +1,48 @@
+version: "3.9"
+
+# Local development stack (no TLS, ports mapped to localhost)
+services:
+  backend:
+    build:
+      context: ../selfstar-app/backend
+      dockerfile: Dockerfile
+    container_name: selfstar-backend-dev
+    restart: unless-stopped
+    env_file:
+      - ./env/backend.env
+    ports:
+      - "8000:8000"
+    networks:
+      - dev
+    depends_on:
+      - ai
+
+  frontend:
+    build:
+      context: ../selfstar-app/frontend
+      dockerfile: Dockerfile
+    container_name: selfstar-frontend-dev
+    restart: unless-stopped
+    env_file:
+      - ./env/frontend.env
+    ports:
+      - "5174:5174"
+    networks:
+      - dev
+
+  ai:
+    build:
+      context: ../selfstar-app/ai/serving
+      dockerfile: Dockerfile
+    container_name: selfstar-ai-dev
+    restart: unless-stopped
+    env_file:
+      - ./env/ai.env
+    ports:
+      - "8600:8600"
+    networks:
+      - dev
+
+networks:
+  dev:
+    driver: bridge

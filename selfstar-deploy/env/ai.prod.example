@@ -1,0 +1,5 @@
+# AI Serving production environment
+PORT=8600
+# Add model/runtime configs as needed
+# MODEL_ID=
+# HF_TOKEN=

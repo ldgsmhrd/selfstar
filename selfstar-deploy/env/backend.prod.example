@@ -1,0 +1,40 @@
+# Backend (FastAPI) production environment
+
+# Public URLs (use your domain)
+BACKEND_URL=https://selfstar.duckdns.org
+FRONTEND_URL=https://selfstar.duckdns.org
+
+# Internal service (Docker network)
+AI_SERVICE_URL=http://selfstar-ai:8600
+
+# Security
+SESSION_SECRET=please-change-to-a-long-random-string
+
+# Database (fill with real credentials; avoid committing secrets)
+DB_HOST=project-db-cgi.smhrd.com
+DB_PORT=3307
+DB_USER=
+DB_PASSWORD=
+DB_NAME=
+DB_PASS=${DB_PASSWORD}
+
+# OAuth providers (redirect URIs must be HTTPS on your domain)
+KAKAO_CLIENT_ID=
+KAKAO_CLIENT_SECRET=
+KAKAO_REDIRECT_URI=https://selfstar.duckdns.org/auth/kakao/callback
+KAKAO_SCOPE=profile_nickname,profile_image
+KAKAO_ADMIN_KEY=
+
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+NAVER_CLIENT_ID=
+NAVER_CLIENT_SECRET=
+NAVER_REDIRECT_URI=https://selfstar.duckdns.org/auth/naver/callback
+
+IG_LONG_LIVED_USER_TOKEN=
+META_APP_ID=
+META_APP_SECRET=
+META_REDIRECT_URI=https://selfstar.duckdns.org/oauth/instagram/callback
+META_SCOPES=instagram_basic,instagram_content_publish,instagram_manage_comments,instagram_manage_insights,pages_show_list,pages_read_engagement,pages_manage_metadata,pages_manage_posts,business_management,public_profile
+META_WEBHOOK_VERIFY_TOKEN=

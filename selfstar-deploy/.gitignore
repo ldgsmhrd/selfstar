@@ -1,0 +1,9 @@
+# Local environment files (do not commit secrets)
+prod.env
+dev.env
+env/*.env
+
+# Let's Encrypt certs (mounted volume paths not in repo, but keep safe if present)
+*.pem
+*.key
+.DS_Store
