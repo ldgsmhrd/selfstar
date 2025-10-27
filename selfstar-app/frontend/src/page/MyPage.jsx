@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import PersonaQuickPicker from "../components/PersonaQuickPicker.jsx";
 import { API_BASE } from "@/api/client";
 
 export default function MyPage() {
@@ -82,6 +81,7 @@ export default function MyPage() {
     setActivePersona(p);
     if (p?.num) localStorage.setItem("activePersonaNum", String(p.num));
     setSelectorOpen(false);
+    try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
     // Clear IG data to avoid showing previous persona's accounts/mapping
     setIgAccounts(null);
     setIgAccountsPersonaNum(null);
@@ -212,6 +212,7 @@ export default function MyPage() {
           personaName={activePersona?.name}
           personaImg={activePersona?.img}
           onOpenIntegrations={() => setIntegrationsOpen(true)}
+          onOpenProfileChange={() => setSelectorOpen(true)}
           loadingPersona={loadingPersona}
         />
 
@@ -368,11 +369,69 @@ export default function MyPage() {
           </div>
         </div>
       )}
+
+      {/* MyPage local profile change modal */}
+      {selectorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.45)] p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectorOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/90 backdrop-blur shadow-[0_30px_70px_rgba(2,6,23,0.28)] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between border-b">
+              <div className="font-semibold">프로필 교체하기</div>
+              <button className="btn" onClick={() => setSelectorOpen(false)}>닫기</button>
+            </div>
+            <div className="p-5">
+              {loadingPersona ? (
+                <div className="h-24 rounded-xl bg-slate-100 animate-pulse" />
+              ) : (
+                <ul className="divide-y">
+                  {Array.isArray(personas) && personas.length > 0 ? (
+                    personas.map((p) => (
+                      <li key={p.num}>
+                        <button
+                          className="w-full flex items-center gap-3 px-2 py-2 hover:bg-slate-50"
+                          onClick={() => choosePersona(p)}
+                        >
+                          {p.img ? (
+                            <img src={p.img} alt="" className="w-9 h-9 rounded-full object-cover border" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-slate-200" />
+                          )}
+                          <div className="flex-1 text-left text-sm font-semibold">{p.name || `프로필 ${p.num}`}</div>
+                        </button>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-slate-500 px-2 py-3">프로필이 없습니다.</li>
+                  )}
+                </ul>
+              )}
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  className="btn light"
+                  onClick={() => {
+                    setSelectorOpen(false);
+                    try { window.dispatchEvent(new CustomEvent("open-imgcreate")); } catch {}
+                  }}
+                >
+                  새 프로필 만들기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }          
 
-function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenIntegrations, loadingPersona }) {
+function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenIntegrations, onOpenProfileChange, loadingPersona }) {
   const pct = Math.min(100, Math.round((credit / creditMax) * 100));
   return (
     <div className="rounded-3xl border border-slate-200 bg-white/80 backdrop-blur p-6 shadow-[0_10px_30px_rgba(30,64,175,0.08)]">
@@ -410,8 +469,7 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenInteg
             <div className="h-full bg-linear-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
           </div>
           <div className="mt-3 flex gap-2">
-            {/* 마이페이지 전용: 기존에 사용하던 간단 선택 모달로 열기 */}
-            <PersonaQuickPicker buttonLabel="프로필 교체하기" to="/mypage" />
+            <button className="btn primary grow" onClick={onOpenProfileChange}>프로필 교체하기</button>
             <button className="btn light" onClick={onOpenIntegrations}>연동관리</button>
           </div>
         </div>
