@@ -16,6 +16,7 @@ import Dashboard from "./Dashboard.jsx";
 import DashboardInsights from "./DashboardInsights.jsx";
 import DashboardPostInsights from "./DashboardPostInsights.jsx";
 import PostInsightDetail from "./PostInsightDetail.jsx";
+import ProfileSelect from "./ProfileSelect.jsx";
 
 const base = "px-3 py-1.5 rounded-full transition";
 const active = "bg-blue-600 text-white shadow";
