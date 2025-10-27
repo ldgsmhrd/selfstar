@@ -14,6 +14,8 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
   const [tiles, setTiles] = useState(() => Array.from({ length: maxSlots }, (_, i) => (i === 0 ? { type: "add" } : { type: "locked" })));
   const [userCredit, setUserCredit] = useState(null);
   const [personas, setPersonas] = useState([]); // [{ num, img, name }]
+  // 외부(새 프로필 생성 후 돌아오기 등)에서 눈에 띄게 새로고침하도록 bump 키 추가
+  const [bump, setBump] = useState(0);
   // credit가 'pro'이면 모든 슬롯 잠금 해제
   useEffect(() => {
     let alive = true;
@@ -30,7 +32,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
       }
     })();
     return () => { alive = false; };
-  }, [refreshKey]);
+  }, [refreshKey, bump]);
 
   // 내 페르소나 목록 불러오기 (user_persona_num 순)
   useEffect(() => {
@@ -51,7 +53,19 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
       }
     })();
     return () => { alive = false; };
-  }, [refreshKey]);
+  }, [refreshKey, bump]);
+
+  // 창 포커스 복귀나 persona-created 이벤트 시 목록을 새로고침
+  useEffect(() => {
+    const onFocus = () => setBump((v) => v + 1);
+    const onPersonaCreated = () => setBump((v) => v + 1);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("persona-created", onPersonaCreated);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("persona-created", onPersonaCreated);
+    };
+  }, []);
 
   // personas + credit -> tiles 재구성
   useEffect(() => {

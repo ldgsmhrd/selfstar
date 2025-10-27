@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 // removed hashtags UI; badge no longer needed
+import { API_BASE } from "@/api/client";
 
 // Helpers
 const mockCaption = (prompt, vibe) => {
