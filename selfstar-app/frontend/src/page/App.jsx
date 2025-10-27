@@ -256,25 +256,36 @@ export default function App() {
         return;
       }
       if (d.type === "persona-created") {
-        // 새 프로필 생성 완료: 크리에이터 모달만 닫고, 기존 화면은 새로고침 신호만 전달
+        // 새 프로필 생성 완료: 크리에이터 모달 닫고, 프로필 선택 모달을 열어 새 항목을 보여준다
         try { setShowImgcreateModal(false); } catch {}
         setProfileSelectRefreshTick((v) => v + 1);
-        try {
-          if (typeof d.persona_num === "number") {
-            localStorage.setItem("activePersonaNum", String(d.persona_num));
-            window.dispatchEvent(new CustomEvent("persona-chosen", { detail: { num: d.persona_num } }));
-          }
-        } catch {}
+        // 채팅 페이지에서는 채팅의 선택 플로우를 사용하고, 그 외에는 전역 모달을 연다
+        if (location.pathname === "/chat") {
+          try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch {}
+        } else {
+          setShowProfileModal(true);
+        }
         return;
       }
       if (d.type === "open-profile-select") {
-        // 필요 시에만 선택창을 열도록 유지하되, 자동으로 열지는 않음
+        // 외부(iframe 등)에서 열린 요청도 전역 모달로 처리
         setProfileSelectRefreshTick((v) => v + 1);
+        setShowProfileModal(true);
         return;
       }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
+  }, []);
+
+  // 전역 커스텀 이벤트로도 프로필 선택 모달을 열 수 있게 처리
+  useEffect(() => {
+    const onOpenProfile = () => {
+      setProfileSelectRefreshTick((v) => v + 1);
+      setShowProfileModal(true);
+    };
+    window.addEventListener("open-profile-select", onOpenProfile);
+    return () => window.removeEventListener("open-profile-select", onOpenProfile);
   }, []);
 
   // Chat은 /chat 진입 전 게이트 모달을 통해 진입
@@ -393,6 +404,48 @@ export default function App() {
       )}
 
       {!isEmbed && <Footer />}
+
+      {/* 전역 프로필 선택 모달: 어디서든 불러 사용할 수 있도록 App 레벨에서 제공 */}
+      {!isEmbed && showProfileModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-1050 grid place-items-center bg-[rgba(15,23,42,0.45)] p-4"
+          onClick={() => setShowProfileModal(false)}
+        >
+          <div
+            className="relative w-[min(1200px,96vw)] max-h-[90dvh] rounded-2xl border border-blue-200 bg-white p-4 shadow-[0_30px_70px_rgba(2,6,23,.35)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              aria-label="닫기"
+              onClick={() => setShowProfileModal(false)}
+              className="absolute top-2.5 right-3 w-9 h-9 rounded-full border bg-white shadow"
+            >
+              ×
+            </button>
+            {/* ProfileSelect: 선택 시 persona-chosen 이벤트를 전파하고 필요시 채팅으로 이동 */}
+            <ProfileSelect
+              maxSlots={4}
+              refreshKey={profileSelectRefreshTick}
+              onAddProfileClick={() => {
+                setShowProfileModal(false);
+                // 이미지 생성 모달 열기
+                setShowImgcreateModal(true);
+              }}
+              onProfileChosen={(p) => {
+                try { if (p?.num) localStorage.setItem("activePersonaNum", String(p.num)); } catch {}
+                try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
+                setShowProfileModal(false);
+                // 채팅으로 이동하거나, 이미 채팅이면 그대로 유지(채팅은 이벤트를 받아 새로고침)
+                if (location.pathname !== "/chat") {
+                  navigate("/chat");
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
