@@ -13,11 +13,17 @@ export default function Profiles() {
     (async () => {
       try {
         setLoading(true);
-        const res = await fetch(`${API_BASE}/personas/list`, { credentials: "include" });
+        // 기존 비-/api 경로를 /api/personas/me로 교체 (서버에 list 엔드포인트 없음)
+        const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        setPersonas(Array.isArray(data?.items) ? data.items : []);
-        setActiveNum(data?.active_num ?? null);
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setPersonas(items);
+        try {
+          const saved = Number(localStorage.getItem("activePersonaNum") || "0");
+          const exists = items.find((p) => p.num === saved);
+          setActiveNum(exists ? saved : (items[0]?.num ?? null));
+        } catch { setActiveNum(items[0]?.num ?? null); }
       } catch (e) {
         setError(e?.message || String(e));
       } finally {
@@ -28,14 +34,11 @@ export default function Profiles() {
 
   const choosePersona = async (p) => {
     try {
-      const res = await fetch(`${API_BASE}/personas/activate`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ persona_num: p.num }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setActiveNum(p.num);
+      // 서버 활성화 엔드포인트가 없으므로 클라이언트 저장소에 선택값을 보관
+      if (p?.num) localStorage.setItem("activePersonaNum", String(p.num));
+      setActiveNum(p?.num ?? null);
+      // 다른 화면과 동기화를 위해 선택 이벤트를 브로드캐스트 (옵션)
+      try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
       nav("/mypage", { replace: true });
     } catch (e) {
       setError(e?.message || String(e));
