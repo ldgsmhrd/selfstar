@@ -19,6 +19,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
     let alive = true;
     (async () => {
       try {
+  console.log("[ProfileSelect] fetch /auth/me base=", API);
   const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
@@ -36,7 +37,8 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
     let alive = true;
     (async () => {
       try {
-  const res = await fetch(`${API_BASE}/personas/me`, { credentials: "include", cache: "no-store" });
+        console.log("[ProfileSelect] fetch /personas/me base=", API);
+  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;

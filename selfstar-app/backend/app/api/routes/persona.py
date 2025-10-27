@@ -6,7 +6,7 @@ import logging
 log = logging.getLogger("personas")
 
 
-router = APIRouter(prefix="/personas", tags=["personas"])
+router = APIRouter(prefix="/api/personas", tags=["personas"])
 
 @router.get("/me", status_code=status.HTTP_200_OK)
 async def list_my_personas(request: Request):

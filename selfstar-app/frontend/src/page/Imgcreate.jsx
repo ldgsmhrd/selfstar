@@ -7,6 +7,9 @@ import TypingText from "../components/TypingText";
 import Field from "../components/Field";
 import StyleTag from "../components/StyleTag";
 
+// API base join helper: API_BASE("", "https://...") 모두 안전
+const api = (path) => `${(API_BASE || "").replace(/\/$/, "")}${path}`;
+
 /* ========================= Home ========================= */
 function Home({ compact = false }) {
   const location = useLocation();
@@ -149,15 +152,13 @@ function Home({ compact = false }) {
   );
 
   const onGenerate = async () => {
-    if (loading) return;              // ✅ CHANGED: 더블클릭 방지
+    if (loading) return;
     setGenerated(null);
     setError(null);
     setGeneratedUrl("");
     setStatus("");
     setLoading(true);
 
-    // ✅ CHANGED: 문장 합치기(feature/featureCombined) 제거.
-    // 사용자가 고른 값을 "그대로" 보낸다.
     const payload = currentPayload;
 
     const MAX_RETRY = 2;
@@ -167,11 +168,11 @@ function Home({ compact = false }) {
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 60_000);
 
-        const res = await fetch(`${API_BASE}/api/images/preview`, {
+        const res = await fetch(api("/api/images/preview"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify(payload),  // 필드 그대로
+          body: JSON.stringify(payload),
           signal: controller.signal,
         });
 
@@ -222,8 +223,8 @@ function Home({ compact = false }) {
     setError(null);
     try {
       // 1) 사용자 프로필 저장 (생일/성별)
-      console.log("[save] step1 PUT /users/me/profile", { birthday: bday, gender: mappedGender });
-      const res = await fetch(`${API_BASE}/users/me/profile`, {
+      console.log("[save] step1 PUT /api/users/me/profile", { birthday: bday, gender: mappedGender });
+      const res = await fetch(`${API_BASE}/api/users/me/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -238,7 +239,7 @@ function Home({ compact = false }) {
       // 2) 생성된 이미지 파일 저장 (data URI -> /media/*.png)
       if (!generated) throw new Error("이미지 미리보기가 없습니다. 먼저 생성해주세요.");
       console.log("[save] step2 POST /api/images/save (JSON), dataURI length=", generated?.length ?? 0);
-      const saveImg = await fetch(`${API_BASE}/api/images/save`, {
+      const saveImg = await fetch(api(`${API_BASE}/api/images/save`), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -255,13 +256,13 @@ function Home({ compact = false }) {
       if (!mediaUrl) throw new Error("이미지 저장 경로가 비어있습니다.");
       console.log("[save] step2 ok, mediaUrl=", mediaUrl);
 
-      // 3) 페르소나 저장 (/personas/setting)
+      // 3) 페르소나 저장 (/api/personas/setting)
       const personaBody = {
         persona_img: mediaUrl,
         persona_parameters: currentPayload,
       };
-      console.log("[save] step3 PUT /personas/setting", personaBody);
-      const savePersona = await fetch(`${API_BASE}/personas/setting`, {
+      console.log("[save] step3 PUT /api/personas/setting", personaBody);
+      const savePersona = await fetch(api(`${API_BASE}/api/personas/setting`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -281,22 +282,22 @@ function Home({ compact = false }) {
         const t = await savePersona.text().catch(() => "");
         throw new Error(`페르소나 저장 실패: ${savePersona.status} ${t || ""}`.trim());
       }
-  const savedPersona = await savePersona.json();
-  if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
-  const personaNum = savedPersona?.persona_num;
+      const savedPersona = await savePersona.json();
+      if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
+      const personaNum = savedPersona?.persona_num;
 
       setStatus("프로필/페르소나 저장 완료");
-      // 저장 완료 후: 새 프로필 번호를 Chat에 바로 전달하여 이미지 생성까지 이어갈 수 있도록 이벤트 발행
+      // 저장 완료 후: 새 프로필 번호를 Chat에 바로 전달
       try {
         if (typeof personaNum === "number") {
-          // 로컬(동일 윈도우) 이벤트: 출처 표기(from: 'imgcreate')
+          // 로컬 이벤트
           window.dispatchEvent(new CustomEvent("persona-created", { detail: { persona_num: personaNum, from: "imgcreate" } }));
-          // iframe 부모 창에도 postMessage로 알림
+          // iframe 부모 창에도 알림
           if (window.parent && window.parent !== window) {
             window.parent.postMessage({ type: "persona-created", persona_num: personaNum, from: "imgcreate" }, "*");
           }
         }
-        // 또한 프로필 선택 모달도 새로 띄워 최신 목록 확인 가능
+        // 최신 프로필 목록 확인 가능
         window.dispatchEvent(new CustomEvent("open-profile-select"));
         if (window.parent && window.parent !== window) {
           window.parent.postMessage({ type: "open-profile-select" }, "*");
@@ -313,8 +314,8 @@ function Home({ compact = false }) {
     <>
       <StyleTag />
 
-  <main className={isEmbed ? "mx-auto w-full max-w-[1080px] p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
-    <div className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}>
+      <main className={isEmbed ? "mx-auto w-full max-w-[1080px] p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
+        <div className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}>
           {/* 좌측 미리보기 카드 */}
           <section className="card overflow-hidden h-full z-0 bg-white">
             <div className="bg-black flex items-center justify-center">
@@ -344,7 +345,6 @@ function Home({ compact = false }) {
               <p className="text-xs md:text-sm text-slate-600">얼굴 ID를 고정할 때 일상과 바뀐 다양한 결과를 얻을 수 있습니다.</p>
             </div>
           </section>
-          
 
           {/* 우측 입력 카드 */}
           <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:left-[-12px]'}`}>
@@ -382,8 +382,6 @@ function Home({ compact = false }) {
               </Field>
             </div>
 
-            {/* 인스타 핸들 입력 제거 (기본 null 저장) */}
-
             {/* 나이 */}
             <div className="grid grid-cols-2 gap-4 mt-1">
               <Field label="나이" compact>
@@ -410,7 +408,6 @@ function Home({ compact = false }) {
                     value={glasses}
                     onChange={(e) => setGlasses(e.target.value)}
                   >
-                    <option value="">선택</option>
                     <option value="">선택</option>
                     <option value="없음">없음</option>
                     <option value="있음">있음</option>

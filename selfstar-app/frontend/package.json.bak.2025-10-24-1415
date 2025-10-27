@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --config vite.dev.config.js --config vite.dev.config.js --config vite.dev.config.js --config vite.dev.config.js --config vite.dev.config.js",
+    "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview --config vite.dev.config.js --config vite.dev.config.js --config vite.dev.config.js --config vite.dev.config.js --config vite.dev.config.js"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.1.7",

@@ -227,6 +227,10 @@ export default function App() {
   const [showGate, setShowGate] = useState(false);
   const [showImgcreateModal, setShowImgcreateModal] = useState(false);
   const [imgModalSize, setImgModalSize] = useState({ w: 1100, h: 760 });
+
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileSelectRefreshTick, setProfileSelectRefreshTick] = useState(0);
+
   // 외부에서(예: Chat) 이미지 생성 모달을 열라는 신호
   useEffect(() => {
     const onOpenImgcreate = () => {
