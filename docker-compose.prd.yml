@@ -39,7 +39,7 @@ services:
     container_name: selfstar-backend
     restart: unless-stopped
     env_file:
-      - ./env/backend.env
+      - ./env/backend.prd
     environment:
       # Ensure app knows its own/public URLs
       - BACKEND_URL=https://selfstar.duckdns.org
@@ -66,7 +66,7 @@ services:
     container_name: selfstar-frontend
     restart: unless-stopped
     env_file:
-      - ./env/frontend.env
+      - ./env/frontend.prd
     expose:
       - "5174"
     networks:
@@ -85,7 +85,7 @@ services:
     container_name: selfstar-ai
     restart: unless-stopped
     env_file:
-      - ./env/ai.env
+      - ./env/ai.prd
     expose:
       - "8600"
     networks:
