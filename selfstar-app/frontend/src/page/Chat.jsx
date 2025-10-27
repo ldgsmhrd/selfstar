@@ -98,7 +98,7 @@ export default function Chat() {
   // 반환: { ok, url(절대), path? }
   const ensurePublicUrl = async (img) => {
     try {
-      const res = await fetch(`/files/ensure_public`, {
+      const res = await fetch(`${API_BASE}/api/files/ensure_public`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -134,7 +134,7 @@ export default function Chat() {
     }
     const caption = `${mockCaption(prompt, vibe)}\n\n${mockHashtags(prompt).join(" ")}`.slice(0, 2200);
     try {
-      const res = await fetch(`/instagram/publish`, {
+      const res = await fetch(`${API_BASE}/api/instagram/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -143,7 +143,7 @@ export default function Chat() {
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && (data?.detail === "persona_oauth_required")) {
         if (confirm("인스타그램 계정 연동이 필요합니다. 지금 연결할까요?")) {
-          const url = `/oauth/instagram/start?persona_num=${encodeURIComponent(current.num)}&picker=1&fresh=1`;
+          const url = `${API_BASE}/oauth/instagram/start?persona_num=${encodeURIComponent(current.num)}&picker=1&fresh=1`;
           window.location.href = url;
         }
         return;
@@ -246,7 +246,7 @@ export default function Chat() {
         payload.style_img = currentPreview;
       }
       console.log("[Chat] POST /chat/image ->", payload);
-      const res = await fetch(`/chat/image`, {
+      const res = await fetch(`${API_BASE}/api/chat/image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -313,7 +313,7 @@ export default function Chat() {
     let active = true;
     (async () => {
       try {
-        const res = await fetch(`/chat/session/start`, { method: "POST", credentials: "include" });
+        const res = await fetch(`${API_BASE}/api/chat/session/start`, { method: "POST", credentials: "include" });
         const data = await res.json().catch(() => ({}));
         if (active && data?.ok && data?.ls_session_id) setLsSessionId(data.ls_session_id);
       } catch {
@@ -324,7 +324,7 @@ export default function Chat() {
       active = false;
       if (lsSessionId) {
         try {
-          fetch(`/chat/session/end`, {
+          fetch(`${API_BASE}/api/chat/session/end`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",

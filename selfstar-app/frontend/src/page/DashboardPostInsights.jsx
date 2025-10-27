@@ -14,7 +14,7 @@ export default function DashboardPostInsights(){
       setLoading(true); setError(null);
       try{
         const personaNum = Number(localStorage.getItem('activePersonaNum')||'0');
-        const r = await fetch(`${API_BASE}/instagram/insights/media_overview?persona_num=${personaNum}&limit=18&days=30`, { credentials:'include' });
+  const r = await fetch(`${API_BASE}/api/instagram/insights/media_overview?persona_num=${personaNum}&limit=18&days=30`, { credentials:'include' });
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
         if(alive) setItems(Array.isArray(j?.items)? j.items:[]);
