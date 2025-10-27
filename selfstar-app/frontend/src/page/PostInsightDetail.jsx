@@ -13,7 +13,7 @@ export default function PostInsightDetail(){
       setLoading(true); setError(null);
       try{
         const personaNum = Number(localStorage.getItem('activePersonaNum')||'0');
-        const r = await fetch(`${API_BASE}/instagram/insights/media_detail?persona_num=${personaNum}&media_id=${encodeURIComponent(id)}`, { credentials:'include' });
+  const r = await fetch(`${API_BASE}/api/instagram/insights/media_detail?persona_num=${personaNum}&media_id=${encodeURIComponent(id)}`, { credentials:'include' });
         if(!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
         if(alive) setItem(j?.item || null);

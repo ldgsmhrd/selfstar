@@ -25,7 +25,7 @@ export default function Alerts() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/instagram/comments/overview?media_limit=5&comments_limit=8`, {
+      const res = await fetch(`${API_BASE}/api/instagram/comments/overview?media_limit=5&comments_limit=8`, {
         method: 'GET',
         credentials: 'include',
         headers: { 'Accept': 'application/json' },

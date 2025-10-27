@@ -18,7 +18,7 @@ export default function DashboardInsights() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/personas/me`, { credentials: 'include' });
+  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: 'include' });
         if (!res.ok) return;
         const j = await res.json();
         const items = Array.isArray(j?.items) ? j.items : [];
@@ -38,16 +38,16 @@ export default function DashboardInsights() {
       if (!persona?.num) { setData(null); return; }
       setLoading(true); setError(null);
       try {
-  const res = await fetch(`${API_BASE}/instagram/insights/overview?persona_num=${persona.num}&days=30`, { credentials: 'include' });
+  const res = await fetch(`${API_BASE}/api/instagram/insights/overview?persona_num=${persona.num}&days=30`, { credentials: 'include' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const j = await res.json();
         setData(j);
         // 일별 증가
-        const d = await fetch(`${API_BASE}/instagram/insights/daily?persona_num=${persona.num}&days=30`, { credentials: 'include' });
+  const d = await fetch(`${API_BASE}/api/instagram/insights/daily?persona_num=${persona.num}&days=30`, { credentials: 'include' });
         if (d.ok) setDaily(await d.json()); else setDaily(null);
         // 게시글별 인사이트
         setMediaLoading(true); setMediaError(null);
-        const m = await fetch(`${API_BASE}/instagram/insights/media_overview?persona_num=${persona.num}&limit=12&days=30`, { credentials: 'include' });
+  const m = await fetch(`${API_BASE}/api/instagram/insights/media_overview?persona_num=${persona.num}&limit=12&days=30`, { credentials: 'include' });
         if (m.ok) {
           const mj = await m.json();
           setMediaItems(Array.isArray(mj?.items)? mj.items : []);

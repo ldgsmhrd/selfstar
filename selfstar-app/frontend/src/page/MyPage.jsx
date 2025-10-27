@@ -58,7 +58,7 @@ export default function MyPage() {
     (async () => {
       try {
         setLoadingPersona(true);
-        const res = await fetch(`${API_BASE}/personas/me`, { credentials: "include" });
+  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
