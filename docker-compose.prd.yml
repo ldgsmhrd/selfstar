@@ -1,5 +1,4 @@
 version: "3.9"
-
 # Production deployment stack for selfstar.duckdns.org with Nginx reverse proxy and TLS (Let's Encrypt)
 services:
   nginx:
@@ -23,7 +22,6 @@ services:
       - /etc/letsencrypt:/etc/letsencrypt:ro
     networks:
       - web
-
   # One-off container to request/renew certificates. See README for commands.
   certbot:
     image: certbot/certbot:latest
@@ -34,10 +32,9 @@ services:
     networks:
       - web
     # No command by default; run ad-hoc with docker compose run certbot ...
-
   backend:
     build:
-      context: ../selfstar-app/backend
+      context: backend
       dockerfile: Dockerfile
     container_name: selfstar-backend
     restart: unless-stopped
@@ -60,12 +57,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
-
   # For first iteration we proxy to Vite dev/preview server.
   # Consider switching to a production static build served by nginx (see README).
   frontend:
     build:
-      context: ../selfstar-app/frontend
+      context: frontend
       dockerfile: Dockerfile
     container_name: selfstar-frontend
     restart: unless-stopped
@@ -81,12 +77,11 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-
   # Internal-only AI serving; backend calls this via AI_BASE_URL
   ai:
     build:
-      context: ../selfstar-app/ai/serving
-      dockerfile: Dockerfile
+      context: ai
+      dockerfile: serving/Dockerfile
     container_name: selfstar-ai
     restart: unless-stopped
     env_file:
@@ -95,10 +90,8 @@ services:
       - "8600"
     networks:
       - web
-
 networks:
   web:
     driver: bridge
-
 volumes:
   certbot-webroot:
