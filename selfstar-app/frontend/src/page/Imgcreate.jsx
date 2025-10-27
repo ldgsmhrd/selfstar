@@ -287,20 +287,16 @@ function Home({ compact = false }) {
       const personaNum = savedPersona?.persona_num;
 
       setStatus("프로필/페르소나 저장 완료");
-      // 저장 완료 후: 새 프로필 번호를 Chat에 바로 전달
+      // 저장 완료 후: 새 프로필 번호를 시스템에 전달하고, 활성 프로필로 지정
       try {
         if (typeof personaNum === "number") {
-          // 로컬 이벤트
+          try { localStorage.setItem("activePersonaNum", String(personaNum)); } catch {}
+          // 로컬 이벤트로 알림
           window.dispatchEvent(new CustomEvent("persona-created", { detail: { persona_num: personaNum, from: "imgcreate" } }));
           // iframe 부모 창에도 알림
           if (window.parent && window.parent !== window) {
             window.parent.postMessage({ type: "persona-created", persona_num: personaNum, from: "imgcreate" }, "*");
           }
-        }
-        // 최신 프로필 목록 확인 가능
-        window.dispatchEvent(new CustomEvent("open-profile-select"));
-        if (window.parent && window.parent !== window) {
-          window.parent.postMessage({ type: "open-profile-select" }, "*");
         }
       } catch { /* noop */ }
     } catch (e) {
@@ -347,7 +343,7 @@ function Home({ compact = false }) {
           </section>
 
           {/* 우측 입력 카드 */}
-          <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:left-[-12px]'}`}>
+          <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:-left-3'}`}>
             {/* 말풍선 헤더 */}
             <div className="flex items-start gap-3 mb-4">
               <img src={guideImg} alt="guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full object-cover border" />

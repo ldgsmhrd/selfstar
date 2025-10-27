@@ -256,16 +256,19 @@ export default function App() {
         return;
       }
       if (d.type === "persona-created") {
-        // 새 프로필 생성 완료: 크리에이터 모달 닫고 프로필 선택 모달을 연다
+        // 새 프로필 생성 완료: 크리에이터 모달만 닫고, 기존 화면은 새로고침 신호만 전달
         try { setShowImgcreateModal(false); } catch {}
-        setShowProfileModal(true);
         setProfileSelectRefreshTick((v) => v + 1);
+        try {
+          if (typeof d.persona_num === "number") {
+            localStorage.setItem("activePersonaNum", String(d.persona_num));
+            window.dispatchEvent(new CustomEvent("persona-chosen", { detail: { num: d.persona_num } }));
+          }
+        } catch {}
         return;
       }
       if (d.type === "open-profile-select") {
-        // 항상 App 레벨 프로필 선택 모달을 연다
-        setShowImgcreateModal(false);
-        setShowProfileModal(true);
+        // 필요 시에만 선택창을 열도록 유지하되, 자동으로 열지는 않음
         setProfileSelectRefreshTick((v) => v + 1);
         return;
       }
