@@ -1,0 +1,29 @@
+# Backend (FastAPI) development environment
+
+# Public URLs for development
+FRONTEND_URL=http://localhost
+BACKEND_URL=http://localhost
+
+# Internal service URLs (Docker network)
+AI_SERVICE_URL=http://selfstar-ai-dev:8600
+AI_BASE_URL=http://selfstar-ai-dev:8600
+
+# Security
+SESSION_SECRET=dev-session-secret-change-in-production
+
+# Database (development - use examples or local DB)
+# DATABASE_URL=mysql+aiomysql://user:pass@localhost:3306/selfstar_dev
+# Or discrete vars:
+# MYSQL_HOST=localhost
+# MYSQL_PORT=3306
+# MYSQL_USER=selfstar_dev
+# MYSQL_PASSWORD=dev_password
+# MYSQL_DB=selfstar_dev
+
+# OAuth keys (development - optional)
+# KAKAO_CLIENT_ID=
+# KAKAO_CLIENT_SECRET=
+# NAVER_CLIENT_ID=
+# NAVER_CLIENT_SECRET=
+# GOOGLE_CLIENT_ID=
+# GOOGLE_CLIENT_SECRET=
