@@ -31,6 +31,18 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Preflight validate required secrets
+        run: |
+          missing=0
+          for v in SERVER_HOST SERVER_USER SERVER_PASSWORD; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Missing required secret: $v"; missing=1; fi; done
+          if [ "$missing" -eq 1 ]; then
+            echo "Required secrets not set. Configure in Settings > Secrets (SERVER_HOST, SERVER_USER, SERVER_PASSWORD)." >&2
+            exit 1
+          fi
+          echo "All required secrets present. Proceeding."
+
       - name: Deploy to server (password SSH)
         uses: appleboy/ssh-action@v1.0.3
         with:
