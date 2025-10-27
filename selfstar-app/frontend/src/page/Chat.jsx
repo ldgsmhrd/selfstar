@@ -43,10 +43,8 @@ export default function Chat() {
   const messagesEndRef = useRef(null);
   const [current, setCurrent] = useState(null);
   const [askProfile, setAskProfile] = useState(true);
-  // Force-refresh ProfileSelect list when a saved profile arrives
-  const [profileRefresh, setProfileRefresh] = useState(0);
-  // If a persona was just created, remember its num for auto-pick
-  const [autoPickNum, setAutoPickNum] = useState(null);
+  // Track if we've already requested the global profile selector to open
+  const requestedSelectorRef = useRef(false);
 
   // chat messages; if image present, render image bubble
   const [messages, setMessages] = useState([
@@ -309,54 +307,44 @@ export default function Chat() {
     return () => clearTimeout(t);
   }, [flight?.started, previewImages.length]);
 
-  // Start a LangSmith session when entering chat; end when leaving
+  // Start/end LangSmith session helpers
+  const startSession = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/session/start`, { method: "POST", credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok && data?.ls_session_id) setLsSessionId(data.ls_session_id);
+    } catch { /* noop */ }
+  };
+  const endSession = async () => {
+    if (!lsSessionId) return;
+    try {
+      await fetch(`${API_BASE}/api/chat/session/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ls_session_id: lsSessionId }),
+      });
+    } catch { /* noop */ }
+  };
+  // Start a session on mount and end on unmount
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/chat/session/start`, { method: "POST", credentials: "include" });
-        const data = await res.json().catch(() => ({}));
-        if (active && data?.ok && data?.ls_session_id) setLsSessionId(data.ls_session_id);
-      } catch {
-        /* noop */
-      }
-    })();
-    return () => {
-      active = false;
-      if (lsSessionId) {
-        try {
-          fetch(`${API_BASE}/api/chat/session/end`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ ls_session_id: lsSessionId }),
-          }).catch(() => {});
-        } catch {
-          /* noop */
-        }
-      }
-    };
+    let mounted = true;
+    (async () => { if (mounted) await startSession(); })();
+    return () => { mounted = false; endSession(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for external open-profile-select event (from Imgcreate flow)
+  // Listen for external open-profile-select and persona events (App coordinates the global modal)
   useEffect(() => {
     const onOpenProfileSelect = () => {
       setAskProfile(true);
       setCurrent(null);
-      setProfileRefresh((v) => v + 1);
     };
     window.addEventListener("open-profile-select", onOpenProfileSelect);
-    // When a new persona is created, open selector and auto-pick it
+    // When a new persona is created, just open selector (no auto-pick)
     const onPersonaCreated = (e) => {
-      const num = e?.detail?.persona_num;
-      if (num == null) return;
-      // App에서 이미 forward 한 이벤트만 소비 (from: 'app-forward')
-      const from = e?.detail?.from;
-      if (from && from !== "app-forward") return;
-      setAutoPickNum(Number(num));
       setAskProfile(true);
       setCurrent(null);
-      setProfileRefresh((v) => v + 1);
     };
     // App에서 사용자가 선택한 프로필을 직접 주입하는 경우
     const onPersonaChosen = (e) => {
@@ -365,7 +353,13 @@ export default function Chat() {
       const c = { name: p.name, num: p.num, img: p.img, avatar: p.img || avatarFromName(p.name) };
       setCurrent(c);
       setAskProfile(false);
-      setAutoPickNum(null);
+      // Reset chat state and restart session to ensure fresh context
+      setMessages([{ id: 1, role: "assistant", text: "인플루언서를 선택하거나 생성해 주세요. 우측 도우미에서 캡션/해시태그를 복사할 수 있습니다.", ts: Date.now() }]);
+      setPreviewImages([]);
+      setPreviewIndex(0);
+      setShowPreviewHint(false);
+      // end previous and start a new session
+      (async () => { await endSession(); await startSession(); })();
     };
     window.addEventListener("persona-created", onPersonaCreated);
     window.addEventListener("persona-chosen", onPersonaChosen);
@@ -376,30 +370,22 @@ export default function Chat() {
     };
   }, []);
 
-  // Profile selection modal
+  // If we need a profile, request the global selector once
+  useEffect(() => {
+    if ((askProfile || !current) && !requestedSelectorRef.current) {
+      requestedSelectorRef.current = true;
+      try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch {}
+    }
+    if (current) {
+      requestedSelectorRef.current = false;
+    }
+  }, [askProfile, current]);
+
+  // If a profile is needed, rely on the App-level global modal and render a lightweight placeholder backdrop
   if (askProfile || !current) {
     return (
-      <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}>
-        <div style={{ position: "relative", width: "min(1200px, 98vw)", maxHeight: "90dvh", overflow: "hidden", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }}>
-          <button aria-label="닫기" onClick={() => navigate("/")} style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}>×</button>
-          <ProfileSelect
-            key={profileRefresh}
-            maxSlots={4}
-            onProfileChosen={(sel) => {
-              const c = { name: sel.name, num: sel.num, img: sel.img, avatar: sel.img || avatarFromName(sel.name) };
-              setCurrent(c);
-              setAskProfile(false);
-              // reset auto-pick after success
-              setAutoPickNum(null);
-            }}
-            onAddProfileClick={() => {
-              setAskProfile(false);
-              window.dispatchEvent(new CustomEvent("open-imgcreate"));
-            }}
-            autoPickNum={autoPickNum}
-            refreshKey={profileRefresh}
-          />
-        </div>
+      <div className="fixed inset-0 grid place-items-center bg-[rgba(15,23,42,0.35)]">
+        <div className="text-white text-sm opacity-80">프로필 선택 창이 열렸습니다…</div>
       </div>
     );
   }
@@ -489,7 +475,7 @@ export default function Chat() {
           </div>
 
           <Label htmlFor="prompt" className="text-xs text-neutral-500">프롬프트</Label>
-          <Textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="예) 패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈" className="min-h-[80px]" />
+          <Textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="예) 패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈" className="min-h-20" />
         </div>
       </main>
 
@@ -531,7 +517,7 @@ export default function Chat() {
                 ) : (
                   <div className="absolute inset-0 rounded-2xl flex items-center justify-center text-xs text-neutral-600">
                     {/* 배경 그라디언트 & 장식 블롭 */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-violet-50" />
+                    <div className="absolute inset-0 bg-linear-to-br from-white via-slate-50 to-violet-50" />
                     <div className="pointer-events-none absolute -top-10 -left-10 h-48 w-48 rounded-full bg-rose-200/30 blur-3xl" />
                     <div className="pointer-events-none absolute -bottom-12 -right-10 h-56 w-56 rounded-full bg-sky-200/30 blur-3xl" />
 

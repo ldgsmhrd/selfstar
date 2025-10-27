@@ -406,11 +406,18 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenInteg
             <span>{credit} / {creditMax}</span>
           </div>
           <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-linear-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
           </div>
           <div className="mt-3 flex gap-2">
-            {/* 모달 대신 페이지 이동 */}
-            <Link to="/profiles" className="btn primary grow">프로필 교체하기</Link>
+            {/* 전역 프로필 선택 모달 열기 */}
+            <button
+              className="btn primary grow"
+              onClick={() => {
+                try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch {}
+              }}
+            >
+              프로필 교체하기
+            </button>
             <button className="btn light" onClick={onOpenIntegrations}>연동관리</button>
           </div>
         </div>
