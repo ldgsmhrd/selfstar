@@ -1,4 +1,5 @@
- import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { API_BASE } from "@/api/client";
 import { useNavigate, Link } from "react-router-dom";
 
 /**
@@ -7,18 +8,21 @@ import { useNavigate, Link } from "react-router-dom";
  * Props (optional):
  * - maxSlots?: number                        // 기본 4
  */
-export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick, compact = false }) {
+export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProfileClick, compact = false, refreshKey, autoPickNum }) {
   const navigate = useNavigate();
   // 내부 모델: { type: "profile" | "add" | "locked", name?: string, img?: string, num?: number }
   const [tiles, setTiles] = useState(() => Array.from({ length: maxSlots }, (_, i) => (i === 0 ? { type: "add" } : { type: "locked" })));
   const [userCredit, setUserCredit] = useState(null);
   const [personas, setPersonas] = useState([]); // [{ num, img, name }]
+  // 외부(새 프로필 생성 후 돌아오기 등)에서 눈에 띄게 새로고침하도록 bump 키 추가
+  const [bump, setBump] = useState(0);
   // credit가 'pro'이면 모든 슬롯 잠금 해제
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/auth/me", { credentials: "include" });
+  console.log("[ProfileSelect] fetch /auth/me base=", API_BASE);
+  const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
@@ -28,26 +32,39 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
       }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [refreshKey, bump]);
 
   // 내 페르소나 목록 불러오기 (user_persona_num 순)
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/personas/me", { credentials: "include" });
+        console.log("[ProfileSelect] fetch /personas/me base=", API_BASE);
+  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
-        const items = Array.isArray(data?.items) ? data.items : [];
-        // 안전 정렬
-        items.sort((a, b) => (a.num || 0) - (b.num || 0));
+  const items = Array.isArray(data?.items) ? data.items : [];
+  // 낮은 num 먼저(오래된 → 새로운). num이 클수록 뒤로 가도록 오름차순 정렬
+  items.sort((a, b) => (a.num || 0) - (b.num || 0));
         setPersonas(items);
       } catch {
         /* noop */
       }
     })();
     return () => { alive = false; };
+  }, [refreshKey, bump]);
+
+  // 창 포커스 복귀나 persona-created 이벤트 시 목록을 새로고침
+  useEffect(() => {
+    const onFocus = () => setBump((v) => v + 1);
+    const onPersonaCreated = () => setBump((v) => v + 1);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("persona-created", onPersonaCreated);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("persona-created", onPersonaCreated);
+    };
   }, []);
 
   // personas + credit -> tiles 재구성
@@ -62,11 +79,6 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
   }, [personas, userCredit, maxSlots]);
   const [selectedIndex, setSelectedIndex] = useState(null);
 
-  // 모달 상태
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingIndex, setEditingIndex] = useState(null);
-  const [newName, setNewName] = useState("");
-
   const canStart = useMemo(() => selectedIndex !== null && tiles[selectedIndex] && tiles[selectedIndex].type === "profile", [selectedIndex, tiles]);
 
   const initialFrom = (name) => {
@@ -74,31 +86,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
     return t ? t[0].toUpperCase() : "+";
   };
 
-  // 프로필 생성 모달은 더 이상 사용하지 않음 (add 클릭 시 바로 이동)
-
-  const closeModal = () => {
-    setModalOpen(false);
-    setEditingIndex(null);
-    setNewName("");
-  };
-
-  const createProfile = () => {
-    const name = newName.trim();
-    if (!name || editingIndex === null) return;
-    setTiles((prev) => {
-      const next = prev.slice();
-      next[editingIndex] = { type: "profile", name };
-      return next;
-    });
-    setSelectedIndex(editingIndex);
-    closeModal();
-    // 프로필 생성 후 동작: 콜백 우선, 없으면 기존 네비게이션
-    if (typeof onProfileChosen === "function") {
-      onProfileChosen(name);
-    } else {
-      navigate("/imgcreate", { state: { profileName: name } });
-    }
-  };
+  // 프로필 생성 모달은 사용하지 않음 (add 클릭 시 바로 이동)
 
   const selectTile = (idx) => {
     const t = tiles[idx];
@@ -119,13 +107,33 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
   const handleStart = () => {
     if (!canStart) return;
     // 선택된 프로필 확정: 콜백 우선, 없으면 기존 네비게이션
-    const name = tiles[selectedIndex].name;
+    const tile = tiles[selectedIndex];
+    const payload = { name: tile.name, num: tile.num, img: tile.img };
     if (typeof onProfileChosen === "function") {
-      onProfileChosen(name);
+      onProfileChosen(payload);
     } else {
-      navigate("/imgcreate", { state: { profileName: name } });
+      navigate("/imgcreate", { state: { profileName: tile.name } });
     }
   };
+
+  // If autoPickNum is provided and exists in personas, auto-select and confirm
+  useEffect(() => {
+    if (autoPickNum == null) return;
+    // find index in current tiles
+    const idx = tiles.findIndex(t => t.type === "profile" && Number(t.num) === Number(autoPickNum));
+    if (idx >= 0) {
+      setSelectedIndex(idx);
+      // slight delay to ensure UI ready, then auto-start
+      const tm = setTimeout(() => {
+        const tile = tiles[idx];
+        if (tile && tile.type === "profile") {
+          const payload = { name: tile.name, num: tile.num, img: tile.img };
+          if (typeof onProfileChosen === "function") onProfileChosen(payload);
+        }
+      }, 50);
+      return () => clearTimeout(tm);
+    }
+  }, [autoPickNum, tiles, onProfileChosen]);
 
   return (
     <div className={`page ${compact ? "is-compact" : ""}`}>
@@ -211,48 +219,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
         </div>
       </div>
 
-      {/* 모달 */}
-      {modalOpen && (
-        <div
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="mk-title"
-        >
-          <div className="modal" style={{ position: "relative" }}>
-            <button
-              aria-label="닫기"
-              onClick={closeModal}
-              style={{ position: "absolute", top: 10, right: 12, width: 32, height: 32, borderRadius: 999, border: "1px solid #dbe9ff", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 16, fontWeight: 800, color: "#334155" }}
-            >
-              ×
-            </button>
-            <h2 id="mk-title">프로필을 생성하시겠습니까?</h2>
-            <p className="mk-sub">이름을 입력하면 새로운 인플루언서 캐릭터가 만들어집니다.</p>
-            <label className="mk-field">
-              <span className="mk-label">프로필 이름</span>
-              <input
-                className="mk-input"
-                placeholder="예: 루나"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") createProfile(); }}
-                autoFocus
-              />
-            </label>
-            <div className="mk-actions">
-              <button className="btn" onClick={closeModal}>취소</button>
-              <button
-                className="btn primary"
-                onClick={createProfile}
-                disabled={!newName.trim()}
-              >
-                생성하기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 프로필 생성 모달 제거됨 */}
     </div>
   );
 }

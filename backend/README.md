@@ -1,8 +1,6 @@
 # Backend (FastAPI)
 
-> Docker로 실행 중이라면 루트 `README.md`의 "Docker로 실행 (권장)" 섹션을 우선 참고하세요. 이 문서는 로컬(vENV) 개발 대안을 포함합니다.
-
-이 문서는 백엔드의 유일한 문서입니다. `app/api/README.md`의 모든 내용은 여기에 통합되었으며, 서버는 항상 Python 가상환경(.venv)에서 실행하는 것을 기준으로 합니다.
+Docker 사용을 권장합니다. 이 문서는 최신 챗/이미지/인스타 게시 플로우 기준으로 정리되어 있습니다.
 
 ## 폴더 구조 (정리됨)
 ```
@@ -30,7 +28,9 @@ backend/
 	requirements.txt
 ```
 
-## 요구 사항
+## 역할과 요구 사항
+- 역할: 인증/세션, 챗 이미지 생성 위임, 정적 파일(`/files`) 서빙, Instagram 게시
+- 요구 사항: Python 3.12+
 
 ## 설치 (Windows PowerShell 기준)
 프로젝트 루트는 `backend/` 입니다.
@@ -46,16 +46,6 @@ python -m pip install --upgrade pip
 ```powershell
 pip install -r requirements.txt
 ```
-Backend (FastAPI)
-
-역할
-- 인증(Kakao 등)과 세션 관리
-- 이미지 생성 요청을 AI 서버로 위임 → data URI 수신 후 파일 저장(/media)
-- 프론트 개발 서버 프록시 대상(/auth, /api, /media)
-
-필수 요구사항
-- Python 3.12+
-
 설치
 ```powershell
 cd backend
@@ -70,7 +60,8 @@ $env:AI_SERVICE_URL = "http://localhost:8600"
 $env:BACKEND_URL    = "http://localhost:8000"
 $env:FRONTEND_URL   = "http://localhost:5174"
 $env:SESSION_SECRET = "selfstar-secret"
-# 선택: $env:MEDIA_ROOT = "C:\\path\\to\\media"  # 기본: backend/app/media
+# 선택: $env:FILES_ROOT = "C:\\path\\to\\storage"  # 기본: backend/app/storage
+# 선택: $env:MEDIA_ROOT = "C:\\path\\to\\media"    # (기존 미디어)
 ```
 
 실행
@@ -79,19 +70,20 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 # Health: http://localhost:8000/health
 ```
 
-주요 라우트
-- GET /health
-- POST /api/images → { ok, image: dataURI, url?: /media/xxx.png }
-	- AI로 위임 성공 시 data URI를 디코드해 파일 저장 후 url도 함께 반환
-- 정적 /media → 이미지 파일 제공
- - GET /auth/me → 세션 사용자(동의 필요 여부 포함: needs_consent)
- - PUT /users/me/profile → 세션 사용자의 성별+생년월일 동시 저장
- - GET /__routes → 등록된 경로 목록 문자열 배열(디버그)
+주요 라우트(최신)
+- GET `/health`
+- POST `/chat/image` → { persona_num, user_text, ls_session_id?, style_img? }
+  - AI(`/chat/image` 또는 레거시 `/predict`) 위임 → data URI 수신 → `FILES_ROOT/yyyyMMdd/uuid.ext` 저장 → `{ image, stored: { path, url } }`
+- POST `/files/ensure_public` → { image(data URI | /files/상대 | http) } → { ok, url(절대), path? }
+- POST `/instagram/publish` → { persona_num, image_url(절대), caption }
+- 정적 `/files` → `backend/app/storage` (생성물)
+- 정적 `/media` → 기존 미디어
+- GET `/__routes` → 등록된 경로 목록(디버그)
 
 참고
-- `app/main.py`에서 /media를 StaticFiles로 마운트합니다.
-- `app/api/routes/images.py`에서 저장 경로와 URL을 동기화했습니다.
- - `app/api/routes/userdata.py`에서 세션 사용자 프로필을 업데이트합니다.
+- `app/main.py`에서 `/files`, `/media`를 StaticFiles로 마운트합니다.
+- `app/api/routes/chat.py`가 이미지 생성 위임 및 저장/DB 기록을 담당합니다.
+- `app/api/routes/files.py`가 데이터 URI를 공개 URL로 승격합니다.
 
 참고: 현재 코드에서 aiomysql/SQLAlchemy를 사용합니다. 만약 실행 시 해당 모듈이 없다는 에러가 나면 아래로 설치 후, 필요 시 `requirements.txt`에 반영하세요.
 ```powershell
@@ -114,7 +106,7 @@ STRICT_CORS=0                 # 1이면 FRONTEND_URL만 허용, 기본은 * 허�
 SESSION_SECRET=change-me
 SESSION_COOKIE_NAME=sid       # 옵션
 
-# AI 서비스 (선택)
+## 환경 변수 (.env)
 # 별도의 AI FastAPI를 8600 포트로 띄운 경우, 백엔드가 이 URL로 위임합니다.
 AI_SERVICE_URL=http://localhost:8600
 
@@ -138,6 +130,14 @@ GOOGLE_REDIRECT_URI=http://localhost:8000/auth/google/callback
 
 # Instagram Graph API (개발용)
 IG_LONG_LIVED_USER_TOKEN=
+
+# Meta App (Instagram OAuth)
+META_APP_ID=
+META_APP_SECRET=
+META_SCOPES=pages_show_list,instagram_basic,instagram_content_publish
+META_REDIRECT_URI=http://localhost:8000/oauth/instagram/callback
+# 기본 스코프: 페이지/IG 조회에 필요한 최소 권한
+META_SCOPES=pages_show_list,instagram_basic
 ```
 
 ## 실행 (개발 모드)
@@ -168,14 +168,20 @@ python -m app
 	- `POST /auth/kakao/unlink` → 카카오 연결 해제(관리자 키 필요)
 	- `GET /` (posts 라우터 기준) → posts 라우트 작동 확인
 
-### 이미지 생성 위임 API
-- `POST /api/images`
-  - 요청: `{ name, gender, feature?, options[] }`
-  - 동작: `.env`의 `AI_SERVICE_URL`이 설정되면 AI 서버의 `/predict`로 위임하여 data URL을 반환합니다.
-  - 미설정/장애 시: 로컬 SVG data URL을 생성하여 반환하는 안전한 폴백을 수행합니다.
+### 이미지 생성 & 파일 저장
+- `POST /chat/image`
+	- 요청: `{ persona_num, user_text, ls_session_id?, style_img? }`
+	- 동작: AI(`/chat/image` 권장, 없으면 `/predict`) 위임 → data URI 수신 → `/files`에 저장 후 응답
 
-주의: `/health` 엔드포인트는 현재 기본 앱에 포함되어 있지 않습니다. 필요하면 `app/main.py`에 간단히 추가하세요.
-→ 현재 저장소에는 `/health`가 구현되어 있어 테스트가 통과합니다.
+### 공개 URL 보장
+- `POST /files/ensure_public`
+	- 요청: `{ image }` (http/https | /files/... | data:image/*;base64,...)
+	- 응답: `{ ok, url(절대), path? }`
+
+### Instagram 게시
+- `POST /instagram/publish`
+	- 요청: `{ persona_num, image_url(절대), caption }`
+	- 전제: 페르소나 OAuth 완료 + IG 계정 매핑 완료, `META_SCOPES`에 `instagram_content_publish` 포함
 
 ### 사용자 프로필 API
 - `PUT /users/me/profile`
@@ -229,17 +235,63 @@ pytest -q
 - SQLAlchemy를 사용할 경우 `app/api/core/database.py`의 `AsyncSessionLocal`을 활용하세요.
 
 
-### Instagram 연동(설계/초안)
+### Instagram 연동(요약)
 - `GET /oauth/instagram/start` → Meta OAuth 시작(redirect)
 - `GET /oauth/instagram/callback` → 코드 교환/장기 토큰 저장
-- `GET /oauth/instagram/accounts` → 사용자 Page/IG 비즈니스 계정 목록 반환
+- `GET /oauth/instagram/accounts` → 페르소나 전용 Page/IG 비즈니스 계정 목록 반환 (persona_num 또는 persona_id 필수)
 - `POST /oauth/instagram/link` → 특정 persona_id와 IG 계정 매핑
 - `POST /oauth/instagram/unlink` → 매핑 제거
 
 DB 권장 구조(요약)
-- ss_instagram_connector(user_id, long_lived_user_token, expires_at)
-- ss_persona_instagram(persona_id ↔ ig_user_id, fb_page_id, ig_username)
+- ss_instagram_connector(user_id, long_lived_user_token, expires_at) [개발 편의/레거시]
+	Instagram 연동은 ss_persona 테이블에서 관리합니다.
+	- 컬럼: ig_user_id, ig_username, fb_page_id, ig_linked_at
+	- 또한 persona_parameters JSON 내 instagram 섹션에도 동기화하여 하위 호환/확장에 대비합니다.
 
 개발용 환경 변수(테스트 토큰)
 - `IG_LONG_LIVED_USER_TOKEN`: 장기 사용자 토큰(서버 환경변수로만 사용, 로그에 출력 금지)
+
+## Instagram 연동 가이드(실전)
+
+1) Meta 개발자 앱 만들기
+- https://developers.facebook.com → 내 앱 → 새 앱 만들기 → 앱 유형(업무/기타) 선택 → 앱 이름/이메일 기입
+- 앱 대시보드에서 제품 추가 → “Facebook 로그인” + “Instagram Graph API” 추가
+
+2) OAuth 설정(필수)
+- Facebook 로그인 → 설정 → 유효한 OAuth 리디렉션 URI에 백엔드 콜백 주소 추가
+	- 예) 개발용: http://localhost:8000/oauth/instagram/callback
+- 앱 ID/앱 시크릿을 복사해 `backend/.env`의 `META_APP_ID`, `META_APP_SECRET`에 채웁니다.
+- `META_REDIRECT_URI`에 동일한 콜백 URL을 넣습니다.
+- 권한(스코프): `pages_show_list, instagram_basic`부터 시작하세요. 추가 권한은 게시/댓글 자동화 시 필요합니다.
+
+3) 로컬 개발 콜백/리디렉션 설정
+- 로컬 개발은 ngrok 없이 진행합니다. 아래 URL을 사용하세요:
+	- BACKEND_URL=http://localhost:8000
+	- META_REDIRECT_URI=http://localhost:8000/oauth/instagram/callback
+- Meta 앱 콘솔의 OAuth 리디렉션 URI에도 동일 콜백을 등록하세요.
+
+4) 로그인/연결 흐름
+- 백엔드가 실행 중이어야 합니다(uvicorn 또는 Docker).
+- 프론트 마이페이지 → “연동관리” → “다시 인증”을 클릭하면 `/oauth/instagram/start`로 이동합니다.
+- Meta 로그인 → 권한 승인 → 콜백 `/oauth/instagram/callback` → 서버가 Long-Lived User Token 저장 → 프론트 `/mypage?ig=connected`로 리다이렉트
+- 같은 사용자가 `/oauth/instagram/accounts`로 페이지/IG 비즈니스 계정 목록을 조회할 수 있습니다. 이때 반드시 페르소나를 지정해야 하며 해당 페르소나의 OAuth 토큰이 사용됩니다.
+- 선택한 계정은 `/oauth/instagram/link`로 persona와 매핑하세요.
+
+5) 권한/검수(프로덕션)
+- 개발 모드에서 테스트 역할(관리자/개발자/테스터)만 로그인 허용됩니다.
+- 실제 사용자 대상 출시 시, 앱 모드를 Live로 전환하고 필요한 권한에 대해 검수를 받아야 합니다.
+- 게시 자동화까지 필요하면 ‘instagram_content_publish’, ‘pages_manage_posts’ 등 추가 권한이 요구됩니다. 권한 신청 사유/동영상/테스트계정 제공 필요.
+
+트러블슈팅
+- redirect_uri mismatch: 백엔드 .env의 META_REDIRECT_URI와 Meta 콘솔 등록 값이 정확히 일치하는지 확인
+- code exchange 실패: 앱 시크릿/앱 ID/redirect_uri 값 점검. 개발 환경에서는 http://localhost:8000 콜백을 사용합니다.
+- accounts API 500: 서버에 사용자 토큰이 없으면 IG_LONG_LIVED_USER_TOKEN로 폴백합니다. 둘 다 없으면 500(server_token_missing)
+
+## Instagram 토큰 저장 정책(중요)
+
+- 이제 Instagram OAuth 토큰은 페르소나 단위로만 저장·사용합니다.
+- `/oauth/instagram/callback`은 서명된 state에서 해석된 persona가 없으면 400(persona_required)을 반환합니다.
+- `/oauth/instagram/accounts` 호출 시에도 persona 지정이 필수입니다. 지정된 페르소나의 토큰이 없으면 401(persona_oauth_required).
+- 과거 사용자 단위 토큰 테이블(`ss_instagram_connector`)은 개발 중 디버그/마이그레이션용으로만 유지합니다. 실제 런타임 경로는 `ss_instagram_connector_persona(user_id, user_persona_num, ...)`에만 의존합니다.
+
 

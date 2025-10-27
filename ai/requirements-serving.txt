@@ -4,3 +4,5 @@ Pillow==10.4.0
 python-dotenv==1.0.1
 # Google GenAI client (required for Gemini/Imagen image generation)
 google-genai>=0.5.0
+# Optional tracing to LangSmith (auto-disabled if not installed)
+langsmith>=0.1.119

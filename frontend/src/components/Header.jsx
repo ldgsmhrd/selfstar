@@ -1,5 +1,6 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
+import { API_BASE } from "@/api/client";
 
 export default function Header() {
   const { pathname } = useLocation();
@@ -7,7 +8,7 @@ export default function Header() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/auth/logout", { method: "POST" });
+  await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
     } catch {
       // ignore
     } finally {

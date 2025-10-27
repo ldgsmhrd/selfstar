@@ -20,7 +20,7 @@ async def create_persona(
     user_id: int,
     persona_img: str,
     persona_parameters: Dict[str, Any],
-) -> int:
+) -> tuple[int, int]:
     """
     ss_persona에 새 레코드를 추가하고 생성된 PK를 반환합니다.
     """
@@ -57,7 +57,7 @@ async def create_persona(
                 pass
             rid = cur.lastrowid or 0
             log.info("persona inserted id=%s for user_id=%s num=%s", rid, user_id, next_num)
-            return rid
+            return rid, next_num
     
 async def get_user_personas(user_id: int) -> List[Dict[str, Any]]:
     """

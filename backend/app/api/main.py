@@ -16,6 +16,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 # 2) 라우터 import (env 로드 이후)
 from app.api.routes import auth
+from app.api.routes import images
+from app.api.routes import persona
+from app.api.routes import chat as chat_route
 # posts 라우터가 있을 수도 없을 수도 있으니, 존재하면만 추가
 try:
     from app.api.routes import posts  # posts.router 내부에 prefix가 있으면 main에서는 붙이지 않음
@@ -50,7 +53,10 @@ app.add_middleware(
 
 # ----- Routers -----
 # auth.router 내부가 APIRouter(prefix="/auth")이면 여기서는 prefix를 다시 붙이지 않습니다.
-app.include_router(auth.router)
+app.include_router(auth.router, prefix="/api")
+app.include_router(images.router)
+app.include_router(persona.router)
+app.include_router(chat_route.router, prefix="api")
 
 if HAS_POSTS:
     app.include_router(posts.router)      # posts.router 안에 prefix가 없으면: app.include_router(posts.router, prefix="/posts")
@@ -63,3 +69,5 @@ def root():
 @app.get("/__routes")
 def __routes():
     return sorted([getattr(r, "path", "") for r in app.router.routes])
+
+

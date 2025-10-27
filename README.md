@@ -1,387 +1,174 @@
-# selfstar 프로젝트 통합 안내
+# SelfStar 프로젝트 통합 안내 (AI · Backend · Frontend)
 
-SelfStar.AI Mono‑Repo (AI · Backend · Frontend)
+Windows(PowerShell) 기준 가이드입니다. Docker 사용을 권장합니다. 이 문서는 최신 챗/이미지/인스타 게시 플로우 기준으로 정리되어 있습니다.
 
-이 레포는 세 부분으로 구성된 모노레포입니다.
-- AI 서버: 이미지 생성(제미나이) FastAPI 서빙 [`ai/`]
-- 백엔드 API: 인증/이미지 생성 위임/정적 미디어 서빙 [`backend/`]
-- 프론트엔드: React + Vite UI [`frontend/`]
+## 구성 개요
+- AI 서버: Gemini 이미지 생성 FastAPI 서빙 (`ai/`)
+- 백엔드 API: 인증, 챗 이미지 생성 위임, 정적 파일(`/files`) 서빙, Instagram 게시 (`backend/`)
+- 프론트엔드: React + Vite UI (Chat Studio 포함) (`frontend/`)
 
-아래 가이드는 Windows(PowerShell) 기준으로 작성되어 있습니다.
-
-필수 요구사항
-- Python 3.12+ (AI, Backend)
-- Node.js 18+ (Frontend)
-- Google API Key (Gemini 이미지 생성)
-
-포트 사용
+포트
 - AI: 8600
 - Backend: 8000
-- Frontend (Vite): 5174
+- Frontend: 5174
 
-주요 기능 하이라이트(최근)
-- 마이페이지에서 페르소나 표시/교체: `/personas/me` 목록을 불러와 1번 페르소나 기본 노출, “프로필 교체하기” 모달에서 이미지·이름 기반 선택 가능
-- 연동 관리(인스타그램): 마이페이지에서 “인스타 연동 하기” 버튼 제공. OAuth 시작 엔드포인트(`/oauth/instagram/start`)에 연결하여 Meta OAuth 플로우로 연계(백엔드 라우트 필요)
+주요 기능(요약)
+- Chat Studio에서 페르소나로 이미지 생성 → 프리뷰 관리(여러 장) → Instagram 업로드
+- 생성 이미지는 로컬 `backend/app/storage`에 저장되고 `/files`로 정적 서빙(날짜/UUID 파일명)
+- 데이터 URI도 `/files/ensure_public`로 저장/승격 후 절대 URL을 획득하여 IG 게시에 사용
+- Instagram Graph 게시: 페르소나 단위 OAuth/계정 매핑 완료 후 `/instagram/publish` 호출
 
-빠른 시작(Windows PowerShell)
-Docker Desktop을 사용하는 방법을 권장합니다. 수동 스크립트 실행 가이드는 제거되었습니다.
+---
 
-## Docker로 실행 (권장)
+## 빠른 시작 (Docker 권장)
 
 사전 준비
-- Docker Desktop 설치(Windows는 WSL2 필요 시 관리자 PowerShell: `wsl --update`)
+- Docker Desktop 설치 (WSL2 필요 시 관리자 PowerShell: `wsl --install; wsl --update`)
 
-1) 환경변수 파일 준비 (서비스별 분리)
-- `backend/.env` 생성(예시는 backend/.env.example 참고):
+1) 환경 변수 준비(서비스별)
+- `backend/.env` 예시
   ```ini
   SESSION_SECRET=change-me
   BACKEND_URL=http://localhost:8000
   FRONTEND_URL=http://localhost:5174
-  
-  # DB (외부 DB 사용 시 알맞게 변경)
-  DB_HOST=project-db-cgi.smhrd.com
-  DB_PORT=3307
-  DB_USER=your_db_user
-  DB_PASSWORD=your_db_password
-  DB_NAME=your_db_name
-  
-  # Kakao OAuth
-  KAKAO_CLIENT_ID=your_kakao_rest_api_key
+  AI_SERVICE_URL=http://ai:8600
+
+  # Meta/Instagram OAuth
+  META_APP_ID=
+  META_APP_SECRET=
+  META_REDIRECT_URI=http://localhost:8000/oauth/instagram/callback
+  META_SCOPES=pages_show_list,instagram_basic,instagram_content_publish
+
+  # Kakao OAuth (필요 시)
+  KAKAO_CLIENT_ID=
   KAKAO_REDIRECT_URI=http://localhost:8000/auth/kakao/callback
   KAKAO_SCOPE=profile_nickname,profile_image
-  KAKAO_ADMIN_KEY=your_kakao_admin_key
-  
-  # Google OAuth (선택)
-  GOOGLE_CLIENT_ID=
-  GOOGLE_CLIENT_SECRET=
-  
-  # AI 서비스 URL
-  AI_SERVICE_URL=http://ai:8600
+  KAKAO_ADMIN_KEY=
   ```
-- `frontend/.env` 생성(예시는 frontend/.env.example 참고):
+- `frontend/.env` 예시
   ```ini
   VITE_API_BASE=http://localhost:8000
   ```
-- `ai/.env` 생성(예시는 ai/.env.example 참고):
+- `ai/.env` 예시
   ```ini
-  AI_REQUIRE_MODEL=1
   GOOGLE_API_KEY=<YOUR_GOOGLE_GENAI_KEY>
+  AI_REQUIRE_MODEL=1
   GEMINI_IMAGE_MODEL=gemini-2.5-flash-image-preview
   ```
 
 2) 실행
 ```powershell
-docker compose up -d --build
+docker compose up -d
 ```
 
-개발용 핫리로드(저장 시 자동 반영)
+개발용 핫리로드
 ```powershell
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
 3) 접속
 - 프론트: http://localhost:5174
-- 백엔드: http://localhost:8000 (health: `/health`, auth: `/auth/kakao`)
+- 백엔드: http://localhost:8000 (health: `/health`)
 - AI: http://localhost:8600 (health: `/health`)
 
-4) 점검
+4) IG 로컬 테스트(중요)
+- Instagram Graph는 공개 HTTPS URL만 허용합니다. 로컬 개발 시 ngrok 등으로 백엔드를 노출하고 `BACKEND_URL`을 해당 https로 설정하세요.
+  - 예: `BACKEND_URL=https://abcd-1234.ngrok-free.app`
+  - 프론트는 여전히 http://localhost:5174 에서 개발 가능하나, 업로드 시 백엔드가 만든 절대 URL이 공개여야 합니다.
+
+---
+
+## 아키텍처와 흐름
+
+1) 이미지 생성
+- 프론트(`/src/page/Chat.jsx`) → `POST /chat/image`
+- 백엔드가 AI로 위임(기본 `AI_SERVICE_URL`) → AI가 data:image/*;base64 응답
+- 백엔드는 data URI를 `backend/app/storage/YYYYMMDD/uuid.ext`로 저장하고 DB 기록(선택) 후 `{ path, url }` 포함 응답
+
+2) 프리뷰/게시
+- 프리뷰는 데이터 URI/URL 혼재 가능
+- 인스타 업로드 시 데이터 URI면 `POST /files/ensure_public`로 파일 저장 후 `BACKEND_URL/files/...` 절대 URL 획득 → `POST /instagram/publish`
+
+3) 정적 서빙
+- `/files` → `backend/app/storage`를 정적 서빙 (미디어 `/media`와 분리)
+
+주요 엔드포인트(Backend)
+- `POST /chat/image`: { persona_num, user_text, ls_session_id?, style_img? } → { ok, image, stored? }
+- `POST /chat/session/start|end`: LangSmith 등 세션 구분용(선택)
+- `POST /files/ensure_public`: { image }(data URI | /files/상대경로 | http URL) → { ok, url, path? }
+- `POST /instagram/publish`: { persona_num, image_url(절대), caption } → IG 게시
+
+AI 서비스(기본)
+- `GET /health`
+- `POST /predict` (레거시) 또는 `POST /chat/image` (권장)
+  - 현재 리포에는 /predict가 기본 포함되어 있습니다. /chat/image를 사용하는 경우 AI에 해당 라우트가 있어야 합니다.
+
+프론트엔드
+- Chat Studio(프리뷰/드래그/다중 저장, Instagram 업로드 버튼)
+- API 호출: `/chat/image`, `/files/ensure_public`, `/instagram/publish`
+
+---
+
+## 수동 실행 (Docker 미사용)
+
+1) AI
 ```powershell
-docker-compose logs backend --tail=100
-docker-compose exec backend printenv | findstr KAKAO
+cd ai; python -m venv .venv; . .venv/Scripts/Activate.ps1; pip install -r requirements.txt
+$env:GOOGLE_API_KEY = "<YOUR_KEY>"; $env:AI_REQUIRE_MODEL = "1"
+python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
 ```
 
-문제 해결
-- 5174/8000/8600 포트 충돌 시 사용 중인 프로세스 종료 후 재실행
+2) Backend
+```powershell
+cd backend; python -m venv .venv; . .venv/Scripts/Activate.ps1; pip install -r requirements.txt
+$env:AI_SERVICE_URL = "http://localhost:8600"; $env:BACKEND_URL = "http://localhost:8000"; $env:FRONTEND_URL = "http://localhost:5174"; $env:SESSION_SECRET = "selfstar-secret"
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+3) Frontend
+```powershell
+cd frontend; npm ci; npm run dev -- --port 5174
+```
+
+---
+
+## 환경 변수 요약
+- 공통
+  - `BACKEND_URL`, `FRONTEND_URL`
+- Backend
+  - `SESSION_SECRET`, `AI_SERVICE_URL`, `FILES_ROOT`(선택), `MEDIA_ROOT`(선택)
+  - Instagram: `META_APP_ID`, `META_APP_SECRET`, `META_REDIRECT_URI`, `META_SCOPES=pages_show_list,instagram_basic,instagram_content_publish`
+- AI
+  - `GOOGLE_API_KEY`, `GEMINI_IMAGE_MODEL`, `AI_REQUIRE_MODEL`
+- Frontend
+  - `VITE_API_BASE`
+
+트러블슈팅
+- 포트 충돌(WinError 10048)
   ```powershell
   Get-NetTCPConnection -LocalPort 5174,8000,8600 -State Listen
   Stop-Process -Id <PID> -Force
   ```
-- 카카오 리다이렉트 오류 시: 
-  - `backend/.env`의 `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI`(http://localhost:8000/auth/kakao/callback) 확인
-  - 카카오 개발자 콘솔 등록값과 일치해야 합니다
+- Instagram 업로드 400/403
+  - `META_SCOPES`에 `instagram_content_publish` 포함 여부, 페르소나 OAuth/링크 완료 여부 확인
+  - `image_url`이 공개 HTTPS URL인지 확인(`/files/ensure_public`을 통해 승격 필요)
+- 프리뷰는 있는데 업로드 버튼 비활성화
+  - Chat 프리뷰가 비어있지 않으면 버튼이 활성화됩니다. 데이터 URI여도 업로드 시 자동 변환됩니다.
 
-레포 구조(요약)
+---
+
+## 리포 구조 요약
 ```
 ai/
-  serving/fastapi_app/main.py           # FastAPI 앱 엔트리 (라우터 장착)
-  serving/fastapi_app/routes/image_model.py    # 이미지 생성 라우터 (Gemini 고정)
-  requirements.txt               # AI 의존성
+  serving/fastapi_app/main.py           # FastAPI 앱 엔트리
+  serving/fastapi_app/routes/image_model.py    # /health, /predict (Gemini)
 backend/
-  app/main.py                    # Backend FastAPI 엔트리(8000)
-  app/api/routes/images.py       # /api/images -> AI에 위임 후 /media 저장
-  app/api/routes/userdata.py     # /users/me/profile (세션 사용자 프로필 업데이트)
-  requirements.txt               # Backend 의존성
+  app/main.py                           # 백엔드 엔트리, /files 정적 서빙 포함
+  app/api/routes/chat.py                # /chat/image 등
+  app/api/routes/files.py               # /files/ensure_public
+  app/api/routes/instagram_publish.py   # /instagram/publish
 frontend/
-  src/page/App.jsx               # 메인 화면: 이미지 생성/표시
-  vite.config.js                 # /auth, /api, /media, /user 프록시 → :8000 (세션 쿠키 유지)
+  src/page/Chat.jsx                     # Chat Studio(UI/업로드)
 ```
 
-설치 및 실행 (Windows, PowerShell)
-1) AI 서버
-```
-cd ai
-python -m venv .venv
-. .venv/Scripts/Activate.ps1
-pip install -r requirements.txt
-
-# 환경 변수 (PowerShell):
-$env:GOOGLE_API_KEY = "<YOUR_API_KEY>"
-$env:AI_REQUIRE_MODEL = "true"  # 제미나이 강제, 폴백 금지
-
-python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
-# Health: http://localhost:8600/health
-# 생성:  POST http://localhost:8600/predict
-```
-
-2) Backend
-```
-cd backend
-python -m venv .venv
-. .venv/Scripts/Activate.ps1
-pip install -r requirements.txt
-
-# .env 또는 환경 변수 설정
-$env:AI_SERVICE_URL = "http://localhost:8600"
-$env:BACKEND_URL    = "http://localhost:8000"
-$env:FRONTEND_URL   = "http://localhost:5174"
-$env:SESSION_SECRET = "selfstar-secret"
-# 미디어 저장 경로(선택): 기본은 backend/app/media
-# $env:MEDIA_ROOT = "C:\\path\\to\\media"
-
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-# Health: http://localhost:8000/health
-# 이미지 생성(프록시): POST http://localhost:8000/api/images
-# 저장된 파일: http://localhost:8000/media/<파일명>
-```
-
-3) Frontend
-```
-cd frontend
-npm ci
-npm run dev
-# http://localhost:5174
-```
-
-동작 원리 (이미지 생성 흐름)
-1) 프론트: /api/images 요청 → 백엔드
-2) 백엔드: AI 서버(/predict)에 위임
-3) AI: 제미나이 호출 → 이미지 바이트 확보 후 PNG로 표준화하여 data URI 반환
-4) 백엔드: data URI를 디코드해 app/media에 저장하고 "url"(예: /media/xxx.png)과 함께 응답
-5) 프론트: 응답의 url이 있으면 우선 사용하여 <img src="/media/...">로 표시
-
-중요 환경 변수
-- GOOGLE_API_KEY: Gemini API Key
-- AI는 Gemini 모델만 사용합니다. AI_REQUIRE_MODEL=true로 모델 필수 모드 유지
-- AI_SERVICE_URL: 백엔드가 위임할 AI 서버 URL
-- BACKEND_URL, FRONTEND_URL: CORS/리다이렉트 등에 사용
-- MEDIA_ROOT: 백엔드에서 이미지 저장 디렉터리(기본: backend/app/media)
-
-문제 해결 가이드
-- 포트 충돌(WinError 10048):
-  ```powershell
-  Get-NetTCPConnection -LocalPort 8000,8600,5174 -State Listen
-  # PID 확인 후 종료
-  Stop-Process -Id <PID> -Force
-  ```
-- 제미나이 키 누락: AI 서버 로그에 GOOGLE_API_KEY 경고 → 환경 변수 확인
-- 프론트에서 이미지가 안 보일 때:
-  - /api/images 응답에 "url" 포함 여부 확인
-  - /media/xxx.png 요청이 200인지 확인
-  - 백엔드 /media 마운트가 올바른지(backend/app/main.py)와 저장 경로 일치 여부(images.py)를 확인
-
-테스트
-```powershell
-$body = '{"name":"이빛나","gender":"여","feature":"귀여운 이미지","options":["안경"]}'
-Invoke-RestMethod -Uri http://localhost:8000/api/images -Method POST -Headers @{'Content-Type'='application/json'} -Body $body | ConvertTo-Json -Depth 3
-```
-
-PR/커밋 규칙(예시)
-- 브랜치: docs/readme-stack-setup
-- 커밋 메시지: "docs: AI/Backend/Frontend 설치·실행 가이드 및 /media 서빙 문서화"
-- PR 제목: "Docs: 모노레포 운영 가이드 정리(AI/BE/FE)"
-- PR 본문: 변경 요약, 실행 방법, 검증 방법, 호환성 메모, 스크린샷(선택)
-
-라이선스
-- 프로젝트 내 표기된 라이선스를 따릅니다.
-
-```
-selfstar/
-│
-├── ai/           # AI 모델 학습, 서빙, MLflow 등
-├── backend/      # FastAPI 기반 REST API 서버
-├── frontend/     # React(Vite) 기반 웹 프론트엔드
-└── README.md     # 통합 안내문서
-```
-
----
-
-## 1. 프론트엔드 (frontend)
-
-- **기술스택:** React(Vite), TailwindCSS
-- **실행 포트:** 반드시 `5174` (고정)
-- **주요 경로:**
-  - `src/` : 주요 컴포넌트, API 클라이언트, hooks 등
-  - `public/` : 정적 파일
-- **환경변수:** `.env` (VITE_ prefix 필수)
-
-### 실행 방법
-```bash
-cd frontend
-cp .env.example .env   # 필요시 환경변수 수정
-npm install
-npm run dev -- --port 5174
-```
-웹 브라우저에서 [http://localhost:5174](http://localhost:5174) 접속
-
-### 환경변수 예시
-```
-VITE_API_BASE=http://localhost:8000
-```
-
----
-
-## 2. 백엔드 (backend)
-
-- **기술스택:** Python 3.12+, FastAPI, MySQL
-- **실행 포트:** 8000
-- **주요 경로:**
-  - `app/` : FastAPI 앱, 라우트, DB, 모델, 스키마 등
-  - `requirements.txt` : 의존성 목록
-  - `.env.example` : 환경변수 예시
-
-### 실행 방법
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .\.venv\Scripts\Activate.ps1  # Windows
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-API 서버 [http://localhost:8000](http://localhost:8000)
-
-### 환경변수 예시
-```
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_USER=youruser
-MYSQL_PASSWORD=yourpassword
-MYSQL_DATABASE=yourdb
-KAKAO_CLIENT_ID=your-kakao-rest-api-key
-KAKAO_SCOPE=profile_nickname,profile_image
-```
-
----
-
-## 3. AI (ai)
-
-- **기술스택:** Python, MLflow, vLLM
-- **주요 경로:**
-  - `training/` : 모델 학습 스크립트
-  - `models/` : 모델/아티팩트 저장
-  - `serving/` : FastAPI 앱, vLLM 서버 스크립트
-  - `notebooks/` : MLflow 초기화 노트북
-
-### AI FastAPI Serving (Gemini 이미지 생성)
-Gemini 기반의 이미지 생성 모델을 FastAPI로 서빙합니다. 동적 임포트로 모델 함수를 선택합니다.
-
-- 기본 엔드포인트:
-  - `GET /health` → `{ status: "ok", service: "ai-serving" }`
-  - `POST /predict` → 입력(name, gender, feature, options)으로 이미지 data URL 반환
-
-- 환경변수
-  - `GOOGLE_API_KEY` (필수): Google Generative AI API 키
-  - 모델은 고정(Gemini)이며 별도 선택 옵션 없음
-  - `GEMINI_IMAGE_MODEL` (선택, 기본 `gemini-2.5-flash-image-preview`)
-
-- 실행 방법 (권장 포트: 8600)
-  - 의존성 설치
-    ```powershell
-    pip install -r ai/requirements.txt
-    ```
-  - Windows PowerShell에서 환경변수 설정
-    - 현재 세션만: ` $env:GOOGLE_API_KEY = "<YOUR_KEY>" `
-    - 영구(새 세션부터 적용): ` setx GOOGLE_API_KEY "<YOUR_KEY>" `
-    - 선택적으로 동적 모델 지정:
-      ```powershell
-  # Gemini 고정: 별도 설정 불필요
-      ```
-  - 개발 서버 실행
-    ```powershell
-    python -m uvicorn ai.serving.fastapi_app.main:app --host 0.0.0.0 --port 8600 --reload
-    ```
-
-- 요청/응답 예시
-  - Request (POST /predict)
-    ```json
-    { "name": "홍길동", "gender": "남성", "feature": "짧은머리", "options": ["안경"] }
-    ```
-  - Response
-    ```json
-    { "ok": true, "image": "data:image/png;base64,iVBORw0K..." }
-    ```
-
-### MLflow 실행 예시
-```bash
-pip install -r ai/requirements.txt
-mlflow ui --backend-store-uri ./ai/mlruns --port 5500
-```
-MLflow UI: [http://localhost:5500](http://localhost:5500)
-
-### vLLM 서버 실행 예시
-```bash
-cd ai/serving/vllm_server
-bash start_vllm.sh
-```
-
-### 백엔드 연동 (프록시 역할)
-백엔드는 `AI_SERVICE_URL`이 설정되면 `/api/images` 요청을 AI 서버의 `/predict`로 위임합니다.
-
-- 예: `AI_SERVICE_URL=http://localhost:8600`
-- 엔드포인트: `POST /api/images` → `{ ok: true, image: "data:..." }`
-
----
-
-## E2E 점검 순서 체크리스트
-1) AI 서버 기동
-  - `GET http://localhost:8600/health` → 200, `{status:"ok"}`
-  - `POST http://localhost:8600/predict` → 200, data URL 포함
-2) 백엔드 기동 (`http://localhost:8000`)
-  - `.env`에 `AI_SERVICE_URL=http://localhost:8600` 설정
-  - `POST http://localhost:8000/api/images` → 200, data URL 포함
-3) 프론트엔드 기동 (`http://localhost:5174`)
-  - 이미지 생성 UI/호출이 있다면 결과 표시 확인
-
----
-
-## 개발 체크리스트 및 참고
-
-- 프론트엔드는 반드시 `5174` 포트로 실행 (Vite 기본값은 5173이므로 반드시 `npm run dev -- --port 5174` 사용)
-- 카카오 OAuth 이메일 동의창이 뜨지 않도록 `.env`의 `KAKAO_SCOPE`에 `account_email`이 포함되지 않도록 설정
-- 백엔드/프론트엔드 모두 환경변수 예시 파일 제공 (`.env.example`)
-- 각 서비스별 README에 상세 실행법, 환경설정, 폴더 구조 예시 포함
-- AI 폴더는 추후 모델/서빙/MLflow/vLLM 등 확장 예정
-
-### 인증 · 온보딩 흐름(Consent → UserSetup)
-1) OAuth 로그인(카카오/구글/네이버) 완료 시 서버 세션에 `user_id` 저장
-2) `GET /auth/me` 응답에 `needs_consent` 노출(생일 미설정 또는 신규 가입 등)
-3) 프론트는 `/consent` → `/setup`으로 유도하여 프로필 정보 수집
-4) `UserSetup`에서 성별+생년월일을 동시 저장: `PUT /users/me/profile`
-  - Vite 프록시 `/users` 경유로 세션 쿠키 포함 호출
-  - 성공 시 `/imgcreate`로 이동
-
-주요 엔드포인트(세션 필요)
-- `GET /auth/me` → `{ ok, authenticated, user: { id, needs_consent, ... } }`
-- `PUT /users/me/profile` → `{ ok, user: { id, birthday, gender } }`
-- `GET /personas/me` → `{ items: [{ num, img, name }] }` (마이페이지/프로필 선택 UI)
-- `GET /oauth/instagram/accounts` → IG 비즈니스 계정 목록(백엔드 구현 시)
-- `POST /oauth/instagram/link` → 페르소나와 IG 계정 매핑(백엔드 구현 시)
-
-디버깅
-- `GET /__routes` → 등록된 경로 문자열 배열(개발용 도우미)
-
----
-
-## 문의 및 기여
-
-이슈/PR/문의는 GitHub 저장소를 통해 남겨주세요.
+문의/기여: 이슈/PR로 제안해주세요.
