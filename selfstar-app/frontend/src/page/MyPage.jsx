@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import PersonaQuickPicker from "../components/PersonaQuickPicker.jsx";
 import { API_BASE } from "@/api/client";
 
 export default function MyPage() {
@@ -409,15 +410,8 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenInteg
             <div className="h-full bg-linear-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
           </div>
           <div className="mt-3 flex gap-2">
-            {/* 전역 프로필 선택 모달 열기 */}
-            <button
-              className="btn primary grow"
-              onClick={() => {
-                try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch {}
-              }}
-            >
-              프로필 교체하기
-            </button>
+            {/* 마이페이지 전용: 기존에 사용하던 간단 선택 모달로 열기 */}
+            <PersonaQuickPicker buttonLabel="프로필 교체하기" to="/mypage" />
             <button className="btn light" onClick={onOpenIntegrations}>연동관리</button>
           </div>
         </div>

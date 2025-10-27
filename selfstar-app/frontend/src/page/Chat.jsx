@@ -326,11 +326,9 @@ export default function Chat() {
       });
     } catch { /* noop */ }
   };
-  // Start a session on mount and end on unmount
+  // End session on unmount (session starts when persona is chosen)
   useEffect(() => {
-    let mounted = true;
-    (async () => { if (mounted) await startSession(); })();
-    return () => { mounted = false; endSession(); };
+    return () => { endSession(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -353,13 +351,13 @@ export default function Chat() {
       const c = { name: p.name, num: p.num, img: p.img, avatar: p.img || avatarFromName(p.name) };
       setCurrent(c);
       setAskProfile(false);
-      // Reset chat state and restart session to ensure fresh context
+      // Reset chat state and start a fresh session with the selected persona
       setMessages([{ id: 1, role: "assistant", text: "인플루언서를 선택하거나 생성해 주세요. 우측 도우미에서 캡션/해시태그를 복사할 수 있습니다.", ts: Date.now() }]);
       setPreviewImages([]);
       setPreviewIndex(0);
       setShowPreviewHint(false);
-      // end previous and start a new session
-      (async () => { await endSession(); await startSession(); })();
+      // start a new session only now
+      (async () => { await startSession(); })();
     };
     window.addEventListener("persona-created", onPersonaCreated);
     window.addEventListener("persona-chosen", onPersonaChosen);

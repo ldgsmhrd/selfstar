@@ -372,7 +372,13 @@ export default function App() {
       {!isEmbed && user && showGate && (
         <ChatGateModal
           onCancel={() => setShowGate(false)}
-          onConfirm={() => { setShowGate(false); navigate("/chat"); }}
+          onConfirm={() => {
+            setShowGate(false);
+            // 채팅 입장 시 항상 프로필 셀렉트가 열리도록 전역 모달을 켠다
+            setProfileSelectRefreshTick((v) => v + 1);
+            setShowProfileModal(true);
+            navigate("/chat");
+          }}
         />
       )}
 
@@ -411,11 +417,11 @@ export default function App() {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-1050 grid place-items-center bg-[rgba(15,23,42,0.45)] p-4"
+          className="fixed inset-0 z-1050 flex items-center justify-center bg-[rgba(15,23,42,0.45)] p-4"
           onClick={() => setShowProfileModal(false)}
         >
           <div
-            className="relative w-[min(1200px,96vw)] max-h-[90dvh] rounded-2xl border border-blue-200 bg-white p-4 shadow-[0_30px_70px_rgba(2,6,23,.35)]"
+            className="relative w-[min(1200px,96vw)] max-h-[90dvh] rounded-2xl border border-blue-200 bg-white p-4 shadow-[0_30px_70px_rgba(2,6,23,.35)] mx-auto my-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <button
