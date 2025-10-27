@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE } from "@/api/client";
 
-export default function PersonaQuickPicker({ buttonLabel = "프로필 선택", to = "/dashboard" }){
+export default function PersonaQuickPicker({ buttonLabel = "프로필 선택", to = "/mypage" }){
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -24,6 +24,7 @@ export default function PersonaQuickPicker({ buttonLabel = "프로필 선택", t
 
   const pick = (p) => {
     try{ if(p?.num) localStorage.setItem('activePersonaNum', String(p.num)); }catch{}
+    try{ window.dispatchEvent(new CustomEvent('persona-chosen', { detail: p })); }catch{}
     setOpen(false);
     navigate(to);
   };
