@@ -524,7 +524,6 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenInteg
           <div>
             <div className="flex items-center gap-2">
               <div className="text-xl font-bold">{personaName || (loadingPersona ? "로딩 중…" : "프로필 없음")}</div>
-              <span className="inline-flex items-center px-2 py-0.5 text-[10px] rounded-full bg-blue-100 text-blue-700 border border-blue-200">검증됨</span>
             </div>
             <div className="text-sm text-slate-500">마이페이지에서 활동 프로필을 관리하세요.</div>
             <div className="mt-2 flex gap-6 text-sm">

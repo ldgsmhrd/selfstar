@@ -30,7 +30,12 @@ function StyleTag() {
         font-weight: 700;
       }
       .chip{
-        padding: 8px 14px;
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding: 10px 16px; /* 여백 확대 */
+        min-height: 40px;   /* 높이 확대 */
+        min-width: 92px;    /* 통일된 최소 너비 소폭 확대 */
         border-radius: 999px;
         border: 1px solid #cfe3fb;
         background: #f2f8ff;
@@ -47,6 +52,18 @@ function StyleTag() {
         box-shadow: 0 14px 28px rgba(45,108,223,.22);
       }
       .chip.chip-on:hover{ box-shadow: 0 18px 34px rgba(45,108,223,.28); transform: translateY(-1px); }
+
+      /* 칩 행을 항상 왼쪽 정렬로 강제 (마지막 줄도 좌측 정렬) */
+      .chip-row-left{ display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-start !important; align-items:flex-start; }
+
+      /* grid 기반 왼쪽 정렬: 줄바꿈 시에도 항상 좌측부터 채움 */
+      .chip-grid-left{
+        display:grid;
+        grid-template-columns: repeat(auto-fill, minmax(92px, max-content));
+        gap:12px; /* 간격 확대 */
+        justify-content:start; /* 컨테이너 너비 대비 항상 좌측 정렬 */
+        align-content:start;
+      }
 
       /* prevent overlapping native select arrow with text */
       select{ background-position: right .75rem center; background-repeat:no-repeat; }

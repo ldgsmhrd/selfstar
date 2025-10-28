@@ -18,7 +18,7 @@ export default function DashboardInsights() {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: 'include' });
+  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: 'include' });
         if (!res.ok) return;
         const j = await res.json();
         const items = Array.isArray(j?.items) ? j.items : [];
@@ -38,16 +38,16 @@ export default function DashboardInsights() {
       if (!persona?.num) { setData(null); return; }
       setLoading(true); setError(null);
       try {
-        const res = await fetch(`${API_BASE}/api/instagram/insights/overview?persona_num=${persona.num}&days=30`, { credentials: 'include' });
+  const res = await fetch(`${API_BASE}/api/instagram/insights/overview?persona_num=${persona.num}&days=30`, { credentials: 'include' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const j = await res.json();
         setData(j);
         // 일별 증가
-        const d = await fetch(`${API_BASE}/api/instagram/insights/daily?persona_num=${persona.num}&days=30`, { credentials: 'include' });
+  const d = await fetch(`${API_BASE}/api/instagram/insights/daily?persona_num=${persona.num}&days=30`, { credentials: 'include' });
         if (d.ok) setDaily(await d.json()); else setDaily(null);
         // 게시글별 인사이트
         setMediaLoading(true); setMediaError(null);
-        const m = await fetch(`${API_BASE}/api/instagram/insights/media_overview?persona_num=${persona.num}&limit=12&days=30`, { credentials: 'include' });
+  const m = await fetch(`${API_BASE}/api/instagram/insights/media_overview?persona_num=${persona.num}&limit=12&days=30`, { credentials: 'include' });
         if (m.ok) {
           const mj = await m.json();
           setMediaItems(Array.isArray(mj?.items)? mj.items : []);
@@ -68,66 +68,62 @@ export default function DashboardInsights() {
 
   return (
     <div className="w-full space-y-6">
-      {/* 헤더 카드 */}
-  <div className="rounded-3xl border bg-linear-to-r from-blue-50 to-indigo-50 p-5 flex items-center justify-between">
-        <div className="min-w-0">
-          <div className="text-xs text-slate-500">Professional Dashboard</div>
-          <h1 className="text-2xl font-black tracking-tight">인사이트</h1>
-          <div className="text-xs text-slate-500 mt-1">최근 30일 데이터 기준</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <select
-            value={persona?.num || ''}
-            onChange={(e)=>{
-              const p = personas.find(x=>String(x.num)===e.target.value);
-              setPersona(p||null);
-              if (p?.num) localStorage.setItem('activePersonaNum', String(p.num));
-            }}
-            className="h-9 px-3 rounded-xl border bg-white"
-          >
-            {personas.map(p=> <option key={p.num} value={p.num}>{p.name || `프로필 ${p.num}`}</option>)}
-          </select>
-          <PersonaQuickPicker buttonLabel="프로필 선택" to="/dashboard" />
-        </div>
-      </div>
-
-      {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{String(error)}</div>
-      )}
-
-      {loading ? (
-        <>
-          <div className="grid md:grid-cols-3 gap-6">
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-black">인사이트</h1>
+            <select
+              value={persona?.num || ''}
+              onChange={(e)=>{
+                const p = personas.find(x=>String(x.num)===e.target.value);
+                setPersona(p||null);
+                if (p?.num) localStorage.setItem('activePersonaNum', String(p.num));
+              }}
+              className="h-9 px-3 rounded-xl border bg-white"
+            >
+              {personas.map(p=> <option key={p.num} value={p.num}>{p.name || `프로필 ${p.num}`}</option>)}
+            </select>
           </div>
-          <div className="rounded-3xl border bg-white/80 p-6">
-            <div className="h-4 w-24 bg-slate-200 rounded animate-pulse mb-4" />
-            <div className="grid md:grid-cols-3 gap-4">
-              {Array.from({length:6}).map((_,i)=>(
-                <div key={i} className="rounded-xl border bg-white/70 p-3 flex items-center gap-3">
-                  <div className="w-14 h-14 rounded-md bg-slate-200 animate-pulse" />
-                  <div className="flex-1">
-                    <div className="h-3 w-24 bg-slate-200 rounded animate-pulse mb-2" />
-                    <div className="h-3 w-36 bg-slate-200 rounded animate-pulse mb-1" />
-                    <div className="h-3 w-20 bg-slate-200 rounded animate-pulse" />
-                  </div>
-                </div>
-              ))}
+          <div className="flex items-center gap-2">
+            <PersonaQuickPicker buttonLabel="프로필 선택" to="/dashboard" />
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-4 py-3 text-sm">{String(error)}</div>
+        )}
+
+        {loading ? (
+          <>
+            <div className="grid md:grid-cols-3 gap-6">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="grid md:grid-cols-3 gap-6">
-            <InsightStat label="팔로워" value={fmtNum(data?.followers_count)} sub={todayTrendText(data) || trendText(data?.series?.follows, data?.series?.unfollows)} />
-            <InsightStat label="도달" value={sumSeries(data?.series?.reach)} spark={data?.series?.reach} />
-            <InsightStat label="노출" value={sumSeries(data?.series?.impressions)} spark={data?.series?.impressions} />
-          </div>
+            <div className="rounded-3xl border bg-white/80 p-6">
+              <div className="h-4 w-24 bg-slate-200 rounded animate-pulse mb-4" />
+              <div className="grid md:grid-cols-3 gap-4">
+                {Array.from({length:6}).map((_,i)=>(
+                  <div key={i} className="rounded-xl border bg-white/70 p-3 flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-md bg-slate-200 animate-pulse" />
+                    <div className="flex-1">
+                      <div className="h-3 w-24 bg-slate-200 rounded animate-pulse mb-2" />
+                      <div className="h-3 w-36 bg-slate-200 rounded animate-pulse mb-1" />
+                      <div className="h-3 w-20 bg-slate-200 rounded animate-pulse" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="grid md:grid-cols-3 gap-6">
+              <InsightStat label="팔로워" value={fmtNum(data?.followers_count)} sub={todayTrendText(data) || trendText(data?.series?.follows, data?.series?.unfollows)} />
+              <InsightStat label="도달" value={sumSeries(data?.series?.reach)} spark={data?.series?.reach} />
+              <InsightStat label="노출" value={sumSeries(data?.series?.impressions)} spark={data?.series?.impressions} />
+            </div>
 
-          {/* 그래프 섹션: 2열 배치 */}
-          <div className="grid lg:grid-cols-2 gap-6">
+            {/* 30일 일별 시각화 */}
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="text-sm text-slate-500 mb-2">30일 · 팔로워 수 / 프로필 방문수</div>
               <MultiLineChart
@@ -139,6 +135,7 @@ export default function DashboardInsights() {
                 ]}
               />
             </div>
+
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm text-slate-500">30일 · 게시일 기준 좋아요 합계(approx)</div>
@@ -146,10 +143,8 @@ export default function DashboardInsights() {
               </div>
               <BarChart width={760} height={180} data={data?.series?.approx_likes_by_post_day || []} color="#f59e0b" />
             </div>
-          </div>
 
-          {/* 스냅샷 기반 일별 증가 */}
-          <div className="grid lg:grid-cols-2 gap-6">
+            {/* 스냅샷 기반 일별 증가 */}
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="text-sm text-slate-500 mb-2">스냅샷 · 팔로워 일별 증가</div>
               <LineChart width={760} height={180} data={daily?.followers_delta || []} color="#2563eb" />
@@ -157,6 +152,7 @@ export default function DashboardInsights() {
                 <div className="text-xs text-slate-400 mt-2">스냅샷이 아직 부족합니다. 자정 자동 스냅샷 이후에 증가분이 표시됩니다.</div>
               )}
             </div>
+
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="text-sm text-slate-500 mb-2">스냅샷 · 좋아요 일별 증가</div>
               <BarChart width={760} height={180} data={daily?.likes_delta || []} color="#fb7185" />
@@ -164,52 +160,40 @@ export default function DashboardInsights() {
                 <div className="text-xs text-slate-400 mt-2">스냅샷이 부족합니다. 최소 2일 이상 자동 기록이 있어야 증가분이 계산됩니다.</div>
               )}
             </div>
-          </div>
 
-          {/* 최근 게시글: 타일 카드 */}
-          <div className="rounded-3xl border bg-white/80 p-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm text-slate-500">최근 게시글</div>
-              <div className="text-xs text-slate-400">최대 9개 표시</div>
+            <div className="rounded-3xl border bg-white/80 p-6">
+              <div className="text-sm text-slate-500 mb-3">최근 게시글</div>
+              {mediaLoading ? (
+                <div className="h-24 bg-slate-100/60 rounded-xl animate-pulse" />
+              ) : mediaError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-xs">게시글 인사이트 로드 실패: {String(mediaError)}</div>
+              ) : (
+                <div className="grid md:grid-cols-3 gap-4">
+                  {(mediaItems || []).slice(0,9).map(m => (
+                    <a key={m.id} href={m.permalink} target="_blank" rel="noreferrer" className="rounded-xl border bg-white/70 p-3 flex items-center gap-3 hover:shadow-sm">
+                      <img src={m.preview_url} alt="" className="w-14 h-14 rounded-md object-cover border" />
+                      <div className="min-w-0">
+                        <div className="text-xs text-slate-500">{fmtDate(m.timestamp)} · {(m.media_product_type || m.media_type) || ''}</div>
+                        <div className="text-sm font-semibold truncate">
+                          {('plays' in (m.insights||{})) ? (
+                            <>
+                              재생 {fmtNum(m.insights?.plays)} · 도달 {fmtNum(m.insights?.reach)} · 저장 {fmtNum(m.insights?.saves)}
+                            </>
+                          ) : (
+                            <>
+                              노출 {fmtNum(m.insights?.impressions)} · 도달 {fmtNum(m.insights?.reach)} · 저장 {fmtNum(m.insights?.saved)}
+                            </>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500">❤️ {fmtNum(m.like_count)} · 💬 {fmtNum(m.comments_count)}</div>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
-            {mediaLoading ? (
-              <div className="h-24 bg-slate-100/60 rounded-xl animate-pulse" />
-            ) : mediaError ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 text-red-700 px-3 py-2 text-xs">게시글 인사이트 로드 실패: {String(mediaError)}</div>
-            ) : (
-              <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {(mediaItems || []).slice(0,9).map(m => (
-                  <a key={m.id} href={m.permalink} target="_blank" rel="noreferrer" className="group block rounded-xl overflow-hidden border bg-white hover:shadow-sm transition">
-                    <div className="relative">
-                      <img src={m.preview_url} alt="" className="w-full aspect-square object-cover" />
-                      <div className="absolute inset-x-2 top-2 flex gap-2">
-                        <span className="px-2 py-0.5 text-[10px] rounded bg-white/90 border">{fmtDate(m.timestamp)}</span>
-                        <span className="px-2 py-0.5 text-[10px] rounded bg-white/90 border">{(m.media_product_type || m.media_type) || ''}</span>
-                      </div>
-                      <div className="absolute inset-x-2 bottom-2 hidden group-hover:flex justify-between text-[11px]">
-                        <span className="px-2 py-0.5 rounded bg-black/60 text-white">❤️ {fmtNum(m.like_count)}</span>
-                        <span className="px-2 py-0.5 rounded bg-black/60 text-white">💬 {fmtNum(m.comments_count)}</span>
-                      </div>
-                    </div>
-                    <div className="p-3">
-                      <div className="text-sm font-semibold truncate">
-                        {('plays' in (m.insights||{})) ? (
-                          <>재생 {fmtNum(m.insights?.plays)} · 도달 {fmtNum(m.insights?.reach)} · 저장 {fmtNum(m.insights?.saves)}</>
-                        ) : (
-                          <>노출 {fmtNum(m.insights?.impressions)} · 도달 {fmtNum(m.insights?.reach)} · 저장 {fmtNum(m.insights?.saved)}</>
-                        )}
-                      </div>
-                      {m.caption && (
-                        <div className="text-xs text-slate-500 mt-0.5 truncate">{m.caption}</div>
-                      )}
-                    </div>
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
-      )}
+          </>
+        )}
     </div>
   );
 }
@@ -221,7 +205,7 @@ function todayTrendText(d){ const v = (d?.today_followers_delta); if(v===null||v
 
 function InsightStat({ label, value, sub, spark }){
   return (
-    <div className="rounded-3xl border bg-white/80 p-6">
+    <div className="rounded-3xl border bg.white/80 p-6">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="text-2xl font-bold mt-1">{value ?? '-'}</div>
       {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
