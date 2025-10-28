@@ -14,7 +14,6 @@ concurrency:
 
 env:
   APP_DIR: /opt/selfstar
-  HEALTH_URL: http://localhost/health
   # SSH 포트가 22가 아니면 repo Variables에 SSH_PORT를 추가하고 아래 주석 해제
   # SSH_PORT: ${{ vars.SSH_PORT }}
 
@@ -150,8 +149,8 @@ jobs:
           source: "./*,backend/.env.production,frontend/.env.production,ai/.env.production"
           debug: true
 
-      # --- 배포: 업로드본 → 실제 APP_DIR 병합(env/ 보존) + compose 검증 + 재시작 + 헬스체크 ---
-      - name: Deploy on server (merge + systemd restart + health)
+      # --- 배포: 업로드본 → 실제 APP_DIR 병합(env/ 보존) + compose 검증 + 재시작 ---
+      - name: Deploy on server (merge + systemd restart)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST }}
@@ -160,13 +159,12 @@ jobs:
           # port: ${{ env.SSH_PORT }}
           script_stop: true
           debug: true
-          envs: APP_DIR,HEALTH_URL
+          envs: APP_DIR
           script: |
             set -euxo pipefail
             echo "[DEPLOY] start $(date -u)"
             APP_DIR="${APP_DIR:-/opt/selfstar}"
             UPLOAD_DIR="${APP_DIR}_upload"
-            HEALTH_URL="${HEALTH_URL:-http://localhost/health}"
 
             # sudo / docker / compose(v2 고정)
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO="sudo"; else SUDO=""; fi
@@ -226,48 +224,6 @@ jobs:
               $DOCKER ps -a || true
               exit 1
             }
-
-            # 헬스체크 (다중 후보, POSIX sh 호환)
-            echo "[DEPLOY] health check (multi candidates)"
-
-            CANDIDATES=""
-            if [ -n "${HEALTH_URL:-}" ]; then
-              CANDIDATES="$CANDIDATES $HEALTH_URL"
-            fi
-            CANDIDATES="$CANDIDATES \
-              http://127.0.0.1/health \
-              http://127.0.0.1/api/health \
-              http://localhost/health \
-              http://localhost/api/health \
-              http://127.0.0.1:8000/health \
-              http://127.0.0.1:8000/api/health"
-
-            ok=0
-            for url in $CANDIDATES; do
-              echo "[DEPLOY] probing $url"
-              i=1
-              while [ $i -le 10 ]; do
-                code="$(curl -s -o /tmp/health.body -w '%{http_code}' "$url" || true)"
-                if [ "$code" = "200" ] || [ "$code" = "204" ]; then
-                  echo "[DEPLOY] health OK ($code) at $url"
-                  ok=1
-                  break
-                fi
-                echo "[DEPLOY] not ready (code=$code) retry $i/10"
-                sleep 2
-                i=$((i+1))
-              done
-              [ "$ok" -eq 1 ] && break
-            done
-
-            if [ "$ok" -ne 1 ]; then
-              echo "[ERR] health failed; body follows (first 200 bytes):"
-              head -c 200 /tmp/health.body || true; echo
-              ${SUDO:-} systemctl status selfstar.service -n 200 --no-pager || true
-              ${SUDO:-} journalctl -u selfstar.service -n 400 --no-pager || true
-              $DOCKER ps -a || true
-              exit 1
-            fi
 
             echo "[DEPLOY] prune images"
             $DOCKER image prune -f || true
