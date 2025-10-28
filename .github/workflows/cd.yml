@@ -33,7 +33,7 @@ jobs:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
-      # (옵션) 필요 시 주석 해제
+      # 필요 시 주석 해제 (Secrets에 줄바꿈 포함 저장)
       # BACKEND_ENV_PROD: ${{ secrets.BACKEND_ENV_PROD }}
       # FRONTEND_ENV_PROD: ${{ secrets.FRONTEND_ENV_PROD }}
       # AI_ENV_PROD: ${{ secrets.AI_ENV_PROD }}
@@ -77,21 +77,19 @@ jobs:
           printf "%s" "${AI_ENV_PROD}" > ai/.env.production
 
       # --- SSH 사전 연결 테스트 ---
-      - name: Preflight: verify SSH connectivity
+      - name: Preflight - verify SSH connectivity
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
-          timeout: 30s
-          command_timeout: 1m
           script_stop: true
           script: |
             set -e
             echo "[SERVER] SSH OK: $(hostname)"
 
       # --- 사전 시스템 점검: sudo/도커/systemd 확인 + APP_DIR 생성 ---
-      - name: Preflight: check docker & systemd & APP_DIR
+      - name: Preflight - check docker & systemd & APP_DIR
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST }}
@@ -102,42 +100,37 @@ jobs:
           script: |
             set -euo pipefail
             APP_DIR="${APP_DIR:-/opt/selfstar}"
-            # sudo 자동 감지 (비밀번호 요구 없게 -n)
+
+            # sudo 자동 감지
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
               SUDO="sudo"
             else
               SUDO=""
             fi
-            echo "[SERVER] Using sudo: ${SUDO:+yes}${SUDO:+" (via sudo)"}${SUDO:="no"}" >/dev/stderr || true
 
             # docker 확인 (PATH/권한)
             if ! command -v docker >/dev/null 2>&1; then
               if [ -n "$SUDO" ] && $SUDO command -v docker >/dev/null 2>&1; then
-                echo "[SERVER] docker via sudo is available"
+                :
               else
-                echo "[SERVER][ERROR] docker not found in PATH (try install docker or add user to docker group)" >&2
+                echo "[SERVER][ERROR] docker not found in PATH." >&2
                 exit 1
               fi
             fi
-            # docker 권한(daemon 접근) 점검
             if ! docker info >/dev/null 2>&1; then
               if [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
-                echo "[SERVER] docker requires sudo; will use sudo"
+                echo "[SERVER] docker requires sudo; will use sudo."
               else
-                echo "[SERVER][ERROR] docker daemon not accessible. Check service or group membership." >&2
+                echo "[SERVER][ERROR] cannot access docker daemon." >&2
                 exit 1
               fi
             fi
 
-            # systemctl 확인
+            # systemd 확인
             if ! command -v systemctl >/dev/null 2>&1; then
-              echo "[SERVER][ERROR] systemctl not found (is this a systemd host?)" >&2
+              echo "[SERVER][ERROR] systemctl not found." >&2
               exit 1
             fi
-            # 서비스 존재 여부만 미리 보는 정도
-            $SUDO systemctl list-unit-files | grep -q '^selfstar.service' || {
-              echo "[SERVER][WARN] selfstar.service not found yet (will check again during deploy)">&2
-            }
 
             # APP_DIR 준비
             if [ ! -d "$APP_DIR" ]; then
@@ -146,20 +139,21 @@ jobs:
               echo "[SERVER] created $APP_DIR"
             fi
 
-      # --- 코드 동기화(SCP). '*/' 글롭: 숨김(.git) 제외 + 재귀 업로드 ---
-      - name: Sync code to server (SCP)
+      # --- 코드 업로드(임시 폴더로): 숨김(.git 등) 제외, env 보존을 위한 준비 ---
+      - name: Sync code to server (SCP to temp)
         uses: appleboy/scp-action@v1
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
-          target: "${{ env.APP_DIR }}"
+          target: "${{ env.APP_DIR }}_upload"
           overwrite: true
           strip_components: 0
+          # 쉘 글롭 '*'는 숨김항목(.git 등) 제외. 필요한 env.production은 명시 포함
           source: "./*,backend/.env.production,frontend/.env.production,ai/.env.production"
 
-      # --- 배포: sudo 자동감지 + systemd 재시작 + 헬스체크 ---
-      - name: Deploy on server (systemd restart + health)
+      # --- 배포: 업로드본 → 실제 APP_DIR 병합( env/ 보존 ) + 재시작 + 헬스체크 ---
+      - name: Deploy on server (merge + systemd restart + health)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST }}
@@ -171,6 +165,7 @@ jobs:
             set -euo pipefail
             echo "[SERVER] Deploy start: $(date -u)"
             APP_DIR="${APP_DIR:-/opt/selfstar}"
+            UPLOAD_DIR="${APP_DIR}_upload"
             HEALTH_URL="${HEALTH_URL:-http://localhost/health}"
 
             # sudo 감지
@@ -180,38 +175,67 @@ jobs:
               SUDO=""
             fi
 
-            # docker 존재/권한 재확인
-            if ! command -v docker >/dev/null 2>&1; then
-              if [ -n "$SUDO" ] && $SUDO command -v docker >/dev/null 2>&1; then
-                :
-              else
-                echo "[SERVER][ERROR] docker not installed or not in PATH" >&2
-                exit 1
-              fi
-            fi
-            if ! docker info >/dev/null 2>&1; then
-              if [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
-                DOCKER="$SUDO docker"
-              else
-                echo "[SERVER][ERROR] cannot access docker daemon" >&2
-                exit 1
-              fi
-            else
+            # docker 접근자 설정
+            if docker info >/dev/null 2>&1; then
               DOCKER="docker"
+            elif [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
+              DOCKER="sudo docker"
+            else
+              echo "[SERVER][ERROR] cannot access docker daemon." >&2
+              exit 1
             fi
 
             # docker compose 명령
             if command -v docker-compose >/dev/null 2>&1; then
-              DC="${DOCKER%-*} docker-compose"   # sudo docker-compose or docker-compose
+              if [ "$DOCKER" = "docker" ]; then
+                DC="docker-compose"
+              else
+                DC="sudo docker-compose"
+              fi
             else
               DC="$DOCKER compose"
             fi
 
-            # 디렉토리/컴포즈 체크
-            if [ ! -d "$APP_DIR" ]; then
-              echo "[SERVER][ERROR] APP_DIR not found: $APP_DIR" >&2
+            # 업로드본/대상 디렉토리 확인
+            if [ ! -d "$UPLOAD_DIR" ]; then
+              echo "[SERVER][ERROR] Upload dir not found: $UPLOAD_DIR" >&2
               exit 1
             fi
+            if [ ! -d "$APP_DIR" ]; then
+              $SUDO mkdir -p "$APP_DIR"
+              $SUDO chown "${USER:-$LOGNAME}":"${USER:-$LOGNAME}" "$APP_DIR" || true
+            fi
+
+            echo "[SERVER] Merging code from ${UPLOAD_DIR} into ${APP_DIR} (preserve env/)"
+            if command -v rsync >/dev/null 2>&1; then
+              # env/ 제외 병합 (서버에만 있는 파일은 유지; 필요시 --delete 추가)
+              $SUDO rsync -a "${UPLOAD_DIR}/" "${APP_DIR}/" --exclude "env/"
+            else
+              # rsync 없으면 수동 병합
+              shopt -s dotglob
+              for p in "${UPLOAD_DIR}"/*; do
+                b="$(basename "$p")"
+                if [ "$b" = "env" ]; then
+                  continue
+                fi
+                $SUDO rm -rf "${APP_DIR}/${b}"
+                $SUDO cp -a "$p" "${APP_DIR}/"
+              done
+              shopt -u dotglob
+            fi
+
+            # 서버에 env/ 없으면 업로드본 채택(최초 설치 대비)
+            if [ ! -d "${APP_DIR}/env" ] && [ -d "${UPLOAD_DIR}/env" ]; then
+              echo "[SERVER] No server env/ found → adopting uploaded env/"
+              $SUDO cp -a "${UPLOAD_DIR}/env" "${APP_DIR}/"
+            else
+              echo "[SERVER] Keeping existing server env/ as-is"
+            fi
+
+            # 임시 업로드 정리
+            $SUDO rm -rf "${UPLOAD_DIR}"
+
+            # 컴포즈 유효성 확인(있으면)
             cd "$APP_DIR"
             if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
               echo "[SERVER] Compose config check"
@@ -220,6 +244,7 @@ jobs:
               echo "[SERVER][WARN] No docker-compose.yml found (systemd 내부 처리 가정)"
             fi
 
+            # systemd 재시작
             echo "[SERVER] systemd reload & restart selfstar.service"
             if $SUDO systemctl list-unit-files | grep -q '^selfstar.service'; then
               $SUDO systemctl daemon-reload
@@ -242,6 +267,7 @@ jobs:
               exit 1
             fi
 
+            # 헬스체크
             echo "[SERVER] Health check on ${HEALTH_URL}"
             ok=0
             for i in $(seq 1 10); do
@@ -262,10 +288,11 @@ jobs:
               exit 1
             fi
 
+            # 정리
             echo "[SERVER] Prune dangling images"
             $DOCKER image prune -f || true
             echo "[SERVER] Deploy complete: $(date -u)"
 
       - name: Summary
         if: always()
-        run: echo "배포 플로우 종료 (상세 로그는 위 단계를 확인하세요)."
+        run: echo "배포 완료(또는 실패 시 위 단계 로그 확인). env/는 서버에 있으면 보존됩니다."
