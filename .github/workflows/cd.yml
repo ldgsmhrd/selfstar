@@ -3,6 +3,9 @@ name: CD Deploy to Naver Cloud (Password Variant)
 on:
   push:
     branches: [ "main" ]
+  pull_request:
+    types: [closed]
+    branches: [ "main" ]
   workflow_dispatch:
 
 concurrency:
@@ -11,21 +14,31 @@ concurrency:
 
 env:
   APP_DIR: /opt/selfstar
-  # 필요 시 헬스체크 URL을 바꿔주세요 (예: http://127.0.0.1:8000/health)
   HEALTH_URL: http://localhost/health
 
 jobs:
   deploy-password:
     name: Deploy via password (SCP + SSH)
-    # PR 머지 커밋일 때 자동 배포, 수동 실행은 무조건 허용
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'Merge pull request') || contains(github.event.head_commit.message, 'Merge branch')
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    # 트리거 정규화:
+    # - 수동 실행
+    # - main으로 푸시
+    # - PR이 main에 머지되어 closed되었고 merged == true
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.action == 'closed' &&
+       github.event.pull_request.merged == true &&
+       github.event.pull_request.base.ref == 'main')
+
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
-      # (옵션) Secrets에 줄바꿈 포함 그대로 저장해두고 필요하면 주석 해제
+      # 필요 시 주석 해제해서 Secrets→파일 렌더링
       # BACKEND_ENV_PROD: ${{ secrets.BACKEND_ENV_PROD }}
       # FRONTEND_ENV_PROD: ${{ secrets.FRONTEND_ENV_PROD }}
       # AI_ENV_PROD: ${{ secrets.AI_ENV_PROD }}
@@ -44,12 +57,12 @@ jobs:
             if [ -z "${!v:-}" ]; then
               echo "::error::Missing required secret: $v"; missing=1; fi; done
           if [ "$missing" -eq 1 ]; then
-            echo "Required secrets not set. Configure in Settings > Secrets (SERVER_HOST, SERVER_USER, SERVER_PASSWORD)." >&2
+            echo "Required secrets not set. Configure SERVER_HOST/USER/PASSWORD." >&2
             exit 1
           fi
           echo "All required secrets present. Proceeding."
 
-      # === [선택] 프로덕션 환경파일을 리포에 포함하지 않고 Secrets로 렌더링 ===
+      # --- (옵션) 환경파일 렌더링 ---
       - name: Render backend env (optional)
         if: env.BACKEND_ENV_PROD != ''
         run: |
@@ -68,7 +81,7 @@ jobs:
           mkdir -p ai
           printf "%s" "${AI_ENV_PROD}" > ai/.env.production
 
-      # === 서버로 코드 전송 (서버에서 git 사용 안 함) ===
+      # --- 서버로 코드 동기화 (서버에서 git pull 불필요) ---
       - name: Sync code to server (SCP)
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -92,7 +105,7 @@ jobs:
             **/.pytest_cache/**
             **/*.log
 
-      # === 서버에서 systemd 재시작 + 실패 시 즉시 실패 처리 + 헬스체크 ===
+      # --- systemd 재시작 + 실패시 실패 처리 + 헬스체크 ---
       - name: Deploy on server (systemd restart + health)
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -107,7 +120,6 @@ jobs:
             APP_DIR="${APP_DIR:-/opt/selfstar}"
             HEALTH_URL="${HEALTH_URL:-http://localhost/health}"
 
-            # 사전 점검
             if ! command -v docker >/dev/null 2>&1; then
               echo "[ERROR] docker not installed" >&2
               exit 1
@@ -119,7 +131,6 @@ jobs:
               DC="docker compose"
             fi
 
-            # 코드가 복사된 디렉토리 확인 및 compose 검사(있으면)
             if [ ! -d "$APP_DIR" ]; then
               echo "[ERROR] APP_DIR not found: $APP_DIR" >&2
               exit 1
@@ -129,13 +140,12 @@ jobs:
               echo "[SERVER] Compose config check"
               $DC config >/dev/null
             else
-              echo "[SERVER][WARN] No docker-compose.yml found (systemd 안에서 처리한다고 가정)"
+              echo "[SERVER][WARN] No docker-compose.yml found (systemd 내부에서 처리 가정)"
             fi
 
             echo "[SERVER] systemd reload & restart selfstar.service"
             if systemctl list-unit-files | grep -q '^selfstar.service'; then
               systemctl daemon-reload
-              # 재시작 실패 시 즉시 실패 처리 + 상태/로그 출력
               if ! systemctl restart selfstar.service; then
                 echo "[SERVER][ERROR] Failed to restart selfstar.service" >&2
                 systemctl status selfstar.service -n 100 --no-pager >&2 || true
@@ -143,7 +153,6 @@ jobs:
                 docker ps -a >&2 || true
                 exit 1
               fi
-
               if ! systemctl is-active --quiet selfstar.service; then
                 echo "[SERVER][ERROR] selfstar.service is not active after restart" >&2
                 systemctl status selfstar.service -n 100 --no-pager >&2 || true
@@ -156,7 +165,6 @@ jobs:
               exit 1
             fi
 
-            # Health check (최대 30초 대기)
             echo "[SERVER] Health check on ${HEALTH_URL}"
             ok=0
             for i in $(seq 1 10); do
@@ -183,4 +191,4 @@ jobs:
 
       - name: Summary
         if: always()
-        run: echo "배포 완료(또는 실패 시 위 단계 로그 참고). 이제 '초록불=서비스 정상 기동' 보장이 됩니다."
+        run: echo "배포 완료(또는 실패 시 위 로그 확인). 이제 스쿼시/리베이스 머지도 자동 배포돼요."
