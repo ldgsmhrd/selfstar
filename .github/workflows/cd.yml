@@ -15,7 +15,7 @@ concurrency:
 env:
   APP_DIR: /opt/selfstar
   HEALTH_URL: http://localhost/health
-  # SSH 포트가 22가 아니면 repo Variables에 SSH_PORT를 추가하고 아래를 주석 해제
+  # SSH 포트가 22가 아니면 repo Variables에 SSH_PORT를 추가하고 아래 주석 해제
   # SSH_PORT: ${{ vars.SSH_PORT }}
 
 jobs:
@@ -171,7 +171,7 @@ jobs:
             # sudo / docker / compose(v2 고정)
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO="sudo"; else SUDO=""; fi
             if docker info >/dev/null 2>&1; then DOCKER="docker"; elif [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then DOCKER="sudo docker"; else echo "[ERR] docker daemon no access"; exit 1; fi
-            DC="$DOCKER compose"   # ← 여기 핵심: docker compose만 사용 (docker-compose 확인하지 않음)
+            DC="$DOCKER compose"   # docker compose만 사용
 
             # 병합 (env/ 보존)
             [ -d "$UPLOAD_DIR" ] || { echo "[ERR] upload dir missing"; exit 1; }
@@ -227,23 +227,27 @@ jobs:
               exit 1
             }
 
-            # 헬스체크 (다중 후보)
+            # 헬스체크 (다중 후보, POSIX sh 호환)
             echo "[DEPLOY] health check (multi candidates)"
-            CANDIDATES=()
-            [ -n "${HEALTH_URL:-}" ] && CANDIDATES+=("$HEALTH_URL")
-            CANDIDATES+=(
-              "http://127.0.0.1/health"
-              "http://127.0.0.1/api/health"
-              "http://localhost/health"
-              "http://localhost/api/health"
-              "http://127.0.0.1:8000/health"
-              "http://127.0.0.1:8000/api/health"
-            )
+
+            CANDIDATES=""
+            if [ -n "${HEALTH_URL:-}" ]; then
+              CANDIDATES="$CANDIDATES $HEALTH_URL"
+            fi
+            CANDIDATES="$CANDIDATES \
+              http://127.0.0.1/health \
+              http://127.0.0.1/api/health \
+              http://localhost/health \
+              http://localhost/api/health \
+              http://127.0.0.1:8000/health \
+              http://127.0.0.1:8000/api/health"
+
             ok=0
-            for url in "${CANDIDATES[@]}"; do
+            for url in $CANDIDATES; do
               echo "[DEPLOY] probing $url"
-              for i in $(seq 1 10); do
-                code=$(curl -s -o /tmp/health.body -w '%{http_code}' "$url" || true)
+              i=1
+              while [ $i -le 10 ]; do
+                code="$(curl -s -o /tmp/health.body -w '%{http_code}' "$url" || true)"
                 if [ "$code" = "200" ] || [ "$code" = "204" ]; then
                   echo "[DEPLOY] health OK ($code) at $url"
                   ok=1
@@ -251,9 +255,11 @@ jobs:
                 fi
                 echo "[DEPLOY] not ready (code=$code) retry $i/10"
                 sleep 2
+                i=$((i+1))
               done
               [ "$ok" -eq 1 ] && break
             done
+
             if [ "$ok" -ne 1 ]; then
               echo "[ERR] health failed; body follows (first 200 bytes):"
               head -c 200 /tmp/health.body || true; echo
@@ -269,4 +275,4 @@ jobs:
 
       - name: Summary
         if: always()
-        run: echo "배포 완료(또는 실패 시 위 단계 로그 확인). env/는 서버에 있으면 보존됩니다."
+        run: echo "배포 플로우 종료. 실패 시 위 단계 로그를 확인하세요. 서버에 존재하는 env/는 보존됩니다."
