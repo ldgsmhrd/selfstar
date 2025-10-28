@@ -15,7 +15,7 @@ concurrency:
 env:
   APP_DIR: /opt/selfstar
   HEALTH_URL: http://localhost/health
-  # 필요 시 SSH 포트가 22가 아니면 repo Variables에 SSH_PORT를 추가하고 아래 주석 해제
+  # SSH 포트가 22가 아니면 repo Variables에 SSH_PORT를 추가하고 아래를 주석 해제
   # SSH_PORT: ${{ vars.SSH_PORT }}
 
 jobs:
@@ -110,9 +110,11 @@ jobs:
             echo "[CHECK] start preflight"
             APP_DIR="${APP_DIR:-/opt/selfstar}"
 
+            # sudo 감지
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO="sudo"; else SUDO=""; fi
             echo "[CHECK] sudo=${SUDO:-none}"
 
+            # docker 접근성
             command -v docker
             if ! docker info >/dev/null 2>&1; then
               if [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
@@ -122,8 +124,10 @@ jobs:
               fi
             fi
 
+            # systemd 확인
             command -v systemctl || { echo "[ERR] systemctl missing"; exit 1; }
 
+            # APP_DIR 준비
             if [ ! -d "$APP_DIR" ]; then
               ${SUDO:-} mkdir -p "$APP_DIR"
               ${SUDO:-} chown "${USER:-$LOGNAME}":"${USER:-$LOGNAME}" "$APP_DIR" || true
@@ -164,14 +168,10 @@ jobs:
             UPLOAD_DIR="${APP_DIR}_upload"
             HEALTH_URL="${HEALTH_URL:-http://localhost/health}"
 
-            # sudo / docker / compose
+            # sudo / docker / compose(v2 고정)
             if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO="sudo"; else SUDO=""; fi
             if docker info >/dev/null 2>&1; then DOCKER="docker"; elif [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then DOCKER="sudo docker"; else echo "[ERR] docker daemon no access"; exit 1; fi
-            if command -v docker-compose >/dev/null 2>&1; then
-              if [ "$DOCKER" = "docker" ]; then DC="docker-compose"; else DC="sudo docker-compose"; fi
-            else
-              DC="$DOCKER compose"
-            fi
+            DC="$DOCKER compose"   # ← 여기 핵심: docker compose만 사용 (docker-compose 확인하지 않음)
 
             # 병합 (env/ 보존)
             [ -d "$UPLOAD_DIR" ] || { echo "[ERR] upload dir missing"; exit 1; }
