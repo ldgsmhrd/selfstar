@@ -3,7 +3,6 @@ name: CD Deploy to Naver Cloud (Password Variant)
 on:
   push:
     branches: [ "main" ]
-  # 수동 재배포용
   workflow_dispatch:
 
 concurrency:
@@ -11,31 +10,38 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  REPO_URL: https://github.com/${{ github.repository }}.git
   APP_DIR: /opt/selfstar
+  # 필요 시 헬스체크 URL을 바꿔주세요 (예: http://127.0.0.1:8000/health)
+  HEALTH_URL: http://localhost/health
 
 jobs:
   deploy-password:
-    name: Deploy via password (appleboy/ssh-action)
-    # upstream main 에 'merge commit' 발생한 push 인지 필터 (머지 커밋 메시지 패턴 기반)
-    if: contains(github.event.head_commit.message, 'Merge pull request') || contains(github.event.head_commit.message, 'Merge branch')
+    name: Deploy via password (SCP + SSH)
+    # PR 머지 커밋일 때 자동 배포, 수동 실행은 무조건 허용
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, 'Merge pull request') || contains(github.event.head_commit.message, 'Merge branch')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
+      # (옵션) Secrets에 줄바꿈 포함 그대로 저장해두고 필요하면 주석 해제
+      # BACKEND_ENV_PROD: ${{ secrets.BACKEND_ENV_PROD }}
+      # FRONTEND_ENV_PROD: ${{ secrets.FRONTEND_ENV_PROD }}
+      # AI_ENV_PROD: ${{ secrets.AI_ENV_PROD }}
+
     steps:
-      - name: Checkout (metadata only)
+      - name: Checkout (full)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Preflight validate required secrets
         run: |
+          set -euo pipefail
           missing=0
           for v in SERVER_HOST SERVER_USER SERVER_PASSWORD; do
-            if [ -z "${!v}" ]; then
+            if [ -z "${!v:-}" ]; then
               echo "::error::Missing required secret: $v"; missing=1; fi; done
           if [ "$missing" -eq 1 ]; then
             echo "Required secrets not set. Configure in Settings > Secrets (SERVER_HOST, SERVER_USER, SERVER_PASSWORD)." >&2
@@ -43,19 +49,65 @@ jobs:
           fi
           echo "All required secrets present. Proceeding."
 
-      - name: Deploy to server (password SSH)
+      # === [선택] 프로덕션 환경파일을 리포에 포함하지 않고 Secrets로 렌더링 ===
+      - name: Render backend env (optional)
+        if: env.BACKEND_ENV_PROD != ''
+        run: |
+          mkdir -p backend
+          printf "%s" "${BACKEND_ENV_PROD}" > backend/.env.production
+
+      - name: Render frontend env (optional)
+        if: env.FRONTEND_ENV_PROD != ''
+        run: |
+          mkdir -p frontend
+          printf "%s" "${FRONTEND_ENV_PROD}" > frontend/.env.production
+
+      - name: Render AI env (optional)
+        if: env.AI_ENV_PROD != ''
+        run: |
+          mkdir -p ai
+          printf "%s" "${AI_ENV_PROD}" > ai/.env.production
+
+      # === 서버로 코드 전송 (서버에서 git 사용 안 함) ===
+      - name: Sync code to server (SCP)
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.SERVER_HOST }}
+          username: ${{ env.SERVER_USER }}
+          password: ${{ env.SERVER_PASSWORD }}
+          source: "."
+          target: "${{ env.APP_DIR }}"
+          overwrite: true
+          strip_components: 0
+          exclude: |
+            .git
+            .github
+            node_modules
+            **/node_modules/**
+            **/.next/**
+            **/dist/**
+            **/.venv/**
+            **/__pycache__/**
+            **/.mypy_cache/**
+            **/.pytest_cache/**
+            **/*.log
+
+      # === 서버에서 systemd 재시작 + 실패 시 즉시 실패 처리 + 헬스체크 ===
+      - name: Deploy on server (systemd restart + health)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
           script_stop: true
+          envs: APP_DIR,HEALTH_URL
           script: |
             set -euo pipefail
             echo "[SERVER] Deploy start: $(date -u)"
             APP_DIR="${APP_DIR:-/opt/selfstar}"
-            REPO_URL="${REPO_URL:-https://github.com/${GITHUB_REPOSITORY}.git}"
+            HEALTH_URL="${HEALTH_URL:-http://localhost/health}"
 
+            # 사전 점검
             if ! command -v docker >/dev/null 2>&1; then
               echo "[ERROR] docker not installed" >&2
               exit 1
@@ -67,41 +119,62 @@ jobs:
               DC="docker compose"
             fi
 
-            mkdir -p /opt
-            if [ -d "$APP_DIR/.git" ]; then
-              echo "[SERVER] Updating repo"
-              cd "$APP_DIR"
-              git fetch --all --prune
-              git checkout main
-              git reset --hard origin/main || true
-              git pull --ff-only || true
+            # 코드가 복사된 디렉토리 확인 및 compose 검사(있으면)
+            if [ ! -d "$APP_DIR" ]; then
+              echo "[ERROR] APP_DIR not found: $APP_DIR" >&2
+              exit 1
+            fi
+            cd "$APP_DIR"
+            if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+              echo "[SERVER] Compose config check"
+              $DC config >/dev/null
             else
-              echo "[SERVER] Cloning $REPO_URL"
-              git clone "$REPO_URL" "$APP_DIR"
-              cd "$APP_DIR"
+              echo "[SERVER][WARN] No docker-compose.yml found (systemd 안에서 처리한다고 가정)"
             fi
 
-            # (환경 파일 생성 단계 제거됨: BACKEND_ENV_PROD / FRONTEND_ENV_PROD / AI_ENV_PROD 미사용)
-
-            echo "[SERVER] systemd reload & service restart (selfstar.service)"
+            echo "[SERVER] systemd reload & restart selfstar.service"
             if systemctl list-unit-files | grep -q '^selfstar.service'; then
-              systemctl daemon-reload || true
-              systemctl restart selfstar.service || true
-              if systemctl is-active --quiet selfstar.service; then
-                echo "[SERVER] selfstar.service active"
-              else
-                echo "[SERVER][WARN] selfstar.service not active after restart" >&2
+              systemctl daemon-reload
+              # 재시작 실패 시 즉시 실패 처리 + 상태/로그 출력
+              if ! systemctl restart selfstar.service; then
+                echo "[SERVER][ERROR] Failed to restart selfstar.service" >&2
+                systemctl status selfstar.service -n 100 --no-pager >&2 || true
+                journalctl -u selfstar.service -n 200 --no-pager >&2 || true
+                docker ps -a >&2 || true
+                exit 1
+              fi
+
+              if ! systemctl is-active --quiet selfstar.service; then
+                echo "[SERVER][ERROR] selfstar.service is not active after restart" >&2
+                systemctl status selfstar.service -n 100 --no-pager >&2 || true
+                journalctl -u selfstar.service -n 200 --no-pager >&2 || true
+                docker ps -a >&2 || true
+                exit 1
               fi
             else
-              echo "[SERVER] selfstar.service not found, skipping restart"
+              echo "[SERVER][ERROR] selfstar.service not found" >&2
+              exit 1
             fi
 
-            echo "[SERVER] Health check (after systemd restart)"
-            # FastAPI 에 /health 엔드포인트가 없는 환경일 경우를 대비해 존재 여부 확인 후 호출
-            if curl -fsS -o /dev/null -w '%{http_code}' http://localhost/health 2>/dev/null | grep -qE '^(200|204)$'; then
-              curl -fsS http://localhost/health || true
-            else
-              echo "[SERVER] /health endpoint not available or non-200; skipping"
+            # Health check (최대 30초 대기)
+            echo "[SERVER] Health check on ${HEALTH_URL}"
+            ok=0
+            for i in $(seq 1 10); do
+              code=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
+              if [ "$code" = "200" ] || [ "$code" = "204" ]; then
+                echo "[SERVER] Health OK ($code)"
+                ok=1
+                break
+              fi
+              echo "[SERVER] Health not ready (got $code). retry $i/10..."
+              sleep 3
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "[SERVER][ERROR] Service unhealthy after deploy" >&2
+              systemctl status selfstar.service -n 100 --no-pager >&2 || true
+              journalctl -u selfstar.service -n 200 --no-pager >&2 || true
+              docker ps -a >&2 || true
+              exit 1
             fi
 
             echo "[SERVER] Prune dangling images"
@@ -110,7 +183,4 @@ jobs:
 
       - name: Summary
         if: always()
-        run: echo "배포(패스워드 방식) 완료 또는 로그 확인 필요"
-
-    ## (Optional) 조건부 실행을 원하면 아래 if 조건 사용 예:
-    # if: ${{ env.SERVER_HOST != '' && env.SERVER_PASSWORD != '' }}
+        run: echo "배포 완료(또는 실패 시 위 단계 로그 참고). 이제 '초록불=서비스 정상 기동' 보장이 됩니다."
