@@ -15,6 +15,8 @@ concurrency:
 env:
   APP_DIR: /opt/selfstar
   HEALTH_URL: http://localhost/health
+  # 필요 시 SSH 포트가 22가 아니면 repo Variables에 SSH_PORT를 추가하고 아래 주석 해제
+  # SSH_PORT: ${{ vars.SSH_PORT }}
 
 jobs:
   deploy-password:
@@ -31,12 +33,12 @@ jobs:
 
     env:
       SERVER_HOST: ${{ secrets.SERVER_HOST }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_USER:  ${{ secrets.SERVER_USER }}
       SERVER_PASSWORD: ${{ secrets.SERVER_PASSWORD }}
       # 필요 시 주석 해제 (Secrets에 줄바꿈 포함 저장)
-      # BACKEND_ENV_PROD: ${{ secrets.BACKEND_ENV_PROD }}
+      # BACKEND_ENV_PROD:  ${{ secrets.BACKEND_ENV_PROD }}
       # FRONTEND_ENV_PROD: ${{ secrets.FRONTEND_ENV_PROD }}
-      # AI_ENV_PROD: ${{ secrets.AI_ENV_PROD }}
+      # AI_ENV_PROD:       ${{ secrets.AI_ENV_PROD }}
 
     steps:
       - name: Checkout (full)
@@ -44,7 +46,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Preflight validate required secrets
+      - name: Preflight - validate required secrets
         run: |
           set -euo pipefail
           missing=0
@@ -83,10 +85,14 @@ jobs:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
+          # port: ${{ env.SSH_PORT }}
           script_stop: true
+          debug: true
           script: |
-            set -e
-            echo "[SERVER] SSH OK: $(hostname)"
+            set -euxo pipefail
+            echo "[CHECK] SSH OK: $(hostname)"
+            whoami
+            uname -a
 
       # --- 사전 시스템 점검: sudo/도커/systemd 확인 + APP_DIR 생성 ---
       - name: Preflight - check docker & systemd & APP_DIR
@@ -95,49 +101,36 @@ jobs:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
+          # port: ${{ env.SSH_PORT }}
           script_stop: true
+          debug: true
           envs: APP_DIR
           script: |
-            set -euo pipefail
+            set -euxo pipefail
+            echo "[CHECK] start preflight"
             APP_DIR="${APP_DIR:-/opt/selfstar}"
 
-            # sudo 자동 감지
-            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-              SUDO="sudo"
-            else
-              SUDO=""
-            fi
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO="sudo"; else SUDO=""; fi
+            echo "[CHECK] sudo=${SUDO:-none}"
 
-            # docker 확인 (PATH/권한)
-            if ! command -v docker >/dev/null 2>&1; then
-              if [ -n "$SUDO" ] && $SUDO command -v docker >/dev/null 2>&1; then
-                :
-              else
-                echo "[SERVER][ERROR] docker not found in PATH." >&2
-                exit 1
-              fi
-            fi
+            command -v docker
             if ! docker info >/dev/null 2>&1; then
               if [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
-                echo "[SERVER] docker requires sudo; will use sudo."
+                echo "[CHECK] docker needs sudo"
               else
-                echo "[SERVER][ERROR] cannot access docker daemon." >&2
-                exit 1
+                echo "[ERR] docker daemon no access"; exit 1
               fi
             fi
 
-            # systemd 확인
-            if ! command -v systemctl >/dev/null 2>&1; then
-              echo "[SERVER][ERROR] systemctl not found." >&2
-              exit 1
-            fi
+            command -v systemctl || { echo "[ERR] systemctl missing"; exit 1; }
 
-            # APP_DIR 준비
             if [ ! -d "$APP_DIR" ]; then
-              $SUDO mkdir -p "$APP_DIR"
-              $SUDO chown "${USER:-$LOGNAME}":"${USER:-$LOGNAME}" "$APP_DIR" || true
-              echo "[SERVER] created $APP_DIR"
+              ${SUDO:-} mkdir -p "$APP_DIR"
+              ${SUDO:-} chown "${USER:-$LOGNAME}":"${USER:-$LOGNAME}" "$APP_DIR" || true
+              echo "[CHECK] created $APP_DIR"
             fi
+            ls -ald "$APP_DIR"
+            echo "[CHECK] preflight OK"
 
       # --- 코드 업로드(임시 폴더로): 숨김(.git 등) 제외, env 보존을 위한 준비 ---
       - name: Sync code to server (SCP to temp)
@@ -146,152 +139,133 @@ jobs:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
+          # port: ${{ env.SSH_PORT }}
           target: "${{ env.APP_DIR }}_upload"
           overwrite: true
           strip_components: 0
-          # 쉘 글롭 '*'는 숨김항목(.git 등) 제외. 필요한 env.production은 명시 포함
           source: "./*,backend/.env.production,frontend/.env.production,ai/.env.production"
+          debug: true
 
-      # --- 배포: 업로드본 → 실제 APP_DIR 병합( env/ 보존 ) + 재시작 + 헬스체크 ---
+      # --- 배포: 업로드본 → 실제 APP_DIR 병합(env/ 보존) + compose 검증 + 재시작 + 헬스체크 ---
       - name: Deploy on server (merge + systemd restart + health)
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.SERVER_HOST }}
           username: ${{ env.SERVER_USER }}
           password: ${{ env.SERVER_PASSWORD }}
+          # port: ${{ env.SSH_PORT }}
           script_stop: true
+          debug: true
           envs: APP_DIR,HEALTH_URL
           script: |
-            set -euo pipefail
-            echo "[SERVER] Deploy start: $(date -u)"
+            set -euxo pipefail
+            echo "[DEPLOY] start $(date -u)"
             APP_DIR="${APP_DIR:-/opt/selfstar}"
             UPLOAD_DIR="${APP_DIR}_upload"
             HEALTH_URL="${HEALTH_URL:-http://localhost/health}"
 
-            # sudo 감지
-            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-              SUDO="sudo"
-            else
-              SUDO=""
-            fi
-
-            # docker 접근자 설정
-            if docker info >/dev/null 2>&1; then
-              DOCKER="docker"
-            elif [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then
-              DOCKER="sudo docker"
-            else
-              echo "[SERVER][ERROR] cannot access docker daemon." >&2
-              exit 1
-            fi
-
-            # docker compose 명령
+            # sudo / docker / compose
+            if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then SUDO="sudo"; else SUDO=""; fi
+            if docker info >/dev/null 2>&1; then DOCKER="docker"; elif [ -n "$SUDO" ] && $SUDO docker info >/dev/null 2>&1; then DOCKER="sudo docker"; else echo "[ERR] docker daemon no access"; exit 1; fi
             if command -v docker-compose >/dev/null 2>&1; then
-              if [ "$DOCKER" = "docker" ]; then
-                DC="docker-compose"
-              else
-                DC="sudo docker-compose"
-              fi
+              if [ "$DOCKER" = "docker" ]; then DC="docker-compose"; else DC="sudo docker-compose"; fi
             else
               DC="$DOCKER compose"
             fi
 
-            # 업로드본/대상 디렉토리 확인
-            if [ ! -d "$UPLOAD_DIR" ]; then
-              echo "[SERVER][ERROR] Upload dir not found: $UPLOAD_DIR" >&2
-              exit 1
-            fi
-            if [ ! -d "$APP_DIR" ]; then
-              $SUDO mkdir -p "$APP_DIR"
-              $SUDO chown "${USER:-$LOGNAME}":"${USER:-$LOGNAME}" "$APP_DIR" || true
-            fi
+            # 병합 (env/ 보존)
+            [ -d "$UPLOAD_DIR" ] || { echo "[ERR] upload dir missing"; exit 1; }
+            [ -d "$APP_DIR" ] || { ${SUDO:-} mkdir -p "$APP_DIR"; ${SUDO:-} chown "${USER:-$LOGNAME}":"${USER:-$LOGNAME}" "$APP_DIR" || true; }
 
-            echo "[SERVER] Merging code from ${UPLOAD_DIR} into ${APP_DIR} (preserve env/)"
+            echo "[DEPLOY] merge code (preserve env/)"
             if command -v rsync >/dev/null 2>&1; then
-              # env/ 제외 병합 (서버에만 있는 파일은 유지; 필요시 --delete 추가)
-              $SUDO rsync -a "${UPLOAD_DIR}/" "${APP_DIR}/" --exclude "env/"
+              ${SUDO:-} rsync -a "${UPLOAD_DIR}/" "${APP_DIR}/" --exclude "env/"
             else
-              # rsync 없으면 수동 병합
               shopt -s dotglob
               for p in "${UPLOAD_DIR}"/*; do
                 b="$(basename "$p")"
-                if [ "$b" = "env" ]; then
-                  continue
-                fi
-                $SUDO rm -rf "${APP_DIR}/${b}"
-                $SUDO cp -a "$p" "${APP_DIR}/"
+                [ "$b" = "env" ] && continue
+                ${SUDO:-} rm -rf "${APP_DIR}/${b}"
+                ${SUDO:-} cp -a "$p" "${APP_DIR}/"
               done
               shopt -u dotglob
             fi
-
-            # 서버에 env/ 없으면 업로드본 채택(최초 설치 대비)
             if [ ! -d "${APP_DIR}/env" ] && [ -d "${UPLOAD_DIR}/env" ]; then
-              echo "[SERVER] No server env/ found → adopting uploaded env/"
-              $SUDO cp -a "${UPLOAD_DIR}/env" "${APP_DIR}/"
-            else
-              echo "[SERVER] Keeping existing server env/ as-is"
+              echo "[DEPLOY] adopt uploaded env/"
+              ${SUDO:-} cp -a "${UPLOAD_DIR}/env" "${APP_DIR}/"
             fi
+            ${SUDO:-} rm -rf "${UPLOAD_DIR}"
 
-            # 임시 업로드 정리
-            $SUDO rm -rf "${UPLOAD_DIR}"
-
-            # 컴포즈 유효성 확인(있으면)
+            # compose 파일 자동 탐지 & 검증
             cd "$APP_DIR"
-            if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
-              echo "[SERVER] Compose config check"
-              $DC config >/dev/null
+            COMPOSE_FILE=""
+            for f in docker-compose.prod.yml docker-compose.prod.yaml docker-compose.yml docker-compose.yaml; do
+              if [ -f "$f" ]; then COMPOSE_FILE="$f"; break; fi
+            done
+            if [ -n "$COMPOSE_FILE" ]; then
+              echo "[DEPLOY] compose config check with -f $COMPOSE_FILE"
+              $DC -f "$COMPOSE_FILE" config >/dev/null
             else
-              echo "[SERVER][WARN] No docker-compose.yml found (systemd 내부 처리 가정)"
+              echo "[WARN] no compose file found (systemd 내부 처리 가정)"
             fi
 
             # systemd 재시작
-            echo "[SERVER] systemd reload & restart selfstar.service"
-            if $SUDO systemctl list-unit-files | grep -q '^selfstar.service'; then
-              $SUDO systemctl daemon-reload
-              if ! $SUDO systemctl restart selfstar.service; then
-                echo "[SERVER][ERROR] Failed to restart selfstar.service" >&2
-                $SUDO systemctl status selfstar.service -n 100 --no-pager >&2 || true
-                $SUDO journalctl -u selfstar.service -n 200 --no-pager >&2 || true
-                $DOCKER ps -a >&2 || true
-                exit 1
-              fi
-              if ! $SUDO systemctl is-active --quiet selfstar.service; then
-                echo "[SERVER][ERROR] selfstar.service is not active after restart" >&2
-                $SUDO systemctl status selfstar.service -n 100 --no-pager >&2 || true
-                $SUDO journalctl -u selfstar.service -n 200 --no-pager >&2 || true
-                $DOCKER ps -a >&2 || true
-                exit 1
-              fi
-            else
-              echo "[SERVER][ERROR] selfstar.service not found" >&2
+            echo "[DEPLOY] systemd restart selfstar.service"
+            ${SUDO:-} systemctl daemon-reload || true
+            ${SUDO:-} systemctl restart selfstar.service || {
+              echo "[ERR] restart failed"
+              ${SUDO:-} systemctl status selfstar.service -n 200 --no-pager || true
+              ${SUDO:-} journalctl -u selfstar.service -n 400 --no-pager || true
+              $DOCKER ps -a || true
               exit 1
-            fi
+            }
+            ${SUDO:-} systemctl is-active --quiet selfstar.service || {
+              echo "[ERR] not active"
+              ${SUDO:-} systemctl status selfstar.service -n 200 --no-pager || true
+              ${SUDO:-} journalctl -u selfstar.service -n 400 --no-pager || true
+              $DOCKER ps -a || true
+              exit 1
+            }
 
-            # 헬스체크
-            echo "[SERVER] Health check on ${HEALTH_URL}"
+            # 헬스체크 (다중 후보)
+            echo "[DEPLOY] health check (multi candidates)"
+            CANDIDATES=()
+            [ -n "${HEALTH_URL:-}" ] && CANDIDATES+=("$HEALTH_URL")
+            CANDIDATES+=(
+              "http://127.0.0.1/health"
+              "http://127.0.0.1/api/health"
+              "http://localhost/health"
+              "http://localhost/api/health"
+              "http://127.0.0.1:8000/health"
+              "http://127.0.0.1:8000/api/health"
+            )
             ok=0
-            for i in $(seq 1 10); do
-              code=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || true)
-              if [ "$code" = "200" ] || [ "$code" = "204" ]; then
-                echo "[SERVER] Health OK ($code)"
-                ok=1
-                break
-              fi
-              echo "[SERVER] Health not ready (got $code). retry $i/10..."
-              sleep 3
+            for url in "${CANDIDATES[@]}"; do
+              echo "[DEPLOY] probing $url"
+              for i in $(seq 1 10); do
+                code=$(curl -s -o /tmp/health.body -w '%{http_code}' "$url" || true)
+                if [ "$code" = "200" ] || [ "$code" = "204" ]; then
+                  echo "[DEPLOY] health OK ($code) at $url"
+                  ok=1
+                  break
+                fi
+                echo "[DEPLOY] not ready (code=$code) retry $i/10"
+                sleep 2
+              done
+              [ "$ok" -eq 1 ] && break
             done
             if [ "$ok" -ne 1 ]; then
-              echo "[SERVER][ERROR] Service unhealthy after deploy" >&2
-              $SUDO systemctl status selfstar.service -n 100 --no-pager >&2 || true
-              $SUDO journalctl -u selfstar.service -n 200 --no-pager >&2 || true
-              $DOCKER ps -a >&2 || true
+              echo "[ERR] health failed; body follows (first 200 bytes):"
+              head -c 200 /tmp/health.body || true; echo
+              ${SUDO:-} systemctl status selfstar.service -n 200 --no-pager || true
+              ${SUDO:-} journalctl -u selfstar.service -n 400 --no-pager || true
+              $DOCKER ps -a || true
               exit 1
             fi
 
-            # 정리
-            echo "[SERVER] Prune dangling images"
+            echo "[DEPLOY] prune images"
             $DOCKER image prune -f || true
-            echo "[SERVER] Deploy complete: $(date -u)"
+            echo "[DEPLOY] done $(date -u)"
 
       - name: Summary
         if: always()
