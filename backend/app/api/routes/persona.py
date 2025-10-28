@@ -2,11 +2,13 @@ from fastapi import APIRouter, HTTPException, status, Request
 from ..schemas.persona import PersonaUpsert
 from app.api.models.persona import create_persona, get_user_personas
 import logging
+from app.core.s3 import s3_enabled, presign_get_url
+import os
 
 log = logging.getLogger("personas")
 
 
-router = APIRouter(prefix="/personas", tags=["personas"])
+router = APIRouter(prefix="/api/personas", tags=["personas"])
 
 @router.get("/me", status_code=status.HTTP_200_OK)
 async def list_my_personas(request: Request):
@@ -21,9 +23,19 @@ async def list_my_personas(request: Request):
             params = r.get("persona_parameters") or {}
             # UI 표시용 이름: parameters.name 이 있으면 사용, 없으면 "프로필 {num}"
             disp = params.get("name") or f"프로필 {r.get('user_persona_num')}"
+            raw_img = (r.get("persona_img") or "").strip()
+            img_out = raw_img
+            # 값이 S3 키처럼 보이면(http/https, /media/가 아닌 경우) 즉시 프리사인 URL로 변환
+            if raw_img and not raw_img.lower().startswith("http") and not raw_img.startswith("/media/"):
+                if s3_enabled():
+                    try:
+                        img_out = presign_get_url(raw_img)
+                    except Exception:
+                        # 실패 시 원본 키 그대로 반환
+                        img_out = raw_img
             items.append({
                 "num": r.get("user_persona_num"),
-                "img": r.get("persona_img"),
+                "img": img_out,
                 "name": disp,
             })
         return {"ok": True, "items": items}
@@ -39,7 +51,7 @@ async def put_my_persona(payload: PersonaUpsert, request: Request):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not logged in")
 
     try:
-        # Debug: trace minimal payload info (lengths only) and user_id
+        # 디버그: 최소한의 페이로드 정보(키 목록)와 user_id 로깅
         try:
             pp_keys = list(payload.persona_parameters.keys())[:8]
         except Exception:

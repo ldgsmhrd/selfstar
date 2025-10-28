@@ -20,6 +20,10 @@ export default function MyPage() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [loadingPersona, setLoadingPersona] = useState(false);
+  // Gallery state (chat-generated images)
+  const [gallery, setGallery] = useState([]); // [{id, key, url, created_at}]
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryError, setGalleryError] = useState(null);
   // Instagram linking state
   const [igAccounts, setIgAccounts] = useState(null);
   const [igAccountsPersonaNum, setIgAccountsPersonaNum] = useState(null); // which persona these accounts belong to
@@ -27,6 +31,7 @@ export default function MyPage() {
   const [igError, setIgError] = useState(null);
   const [igMapping, setIgMapping] = useState(null); // { user_id, user_persona_num, ig_user_id, ig_username, fb_page_id }
   const [igMappingLoading, setIgMappingLoading] = useState(false);
+  // Insights는 마이페이지에서 표시하지 않음(대시보드 전용)
 
   // Helper: build and navigate to OAuth start (keeps current flags)
   const startInstagramOAuth = () => {
@@ -57,7 +62,7 @@ export default function MyPage() {
     (async () => {
       try {
         setLoadingPersona(true);
-        const res = await fetch(`${API_BASE}/personas/me`, { credentials: "include" });
+  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
@@ -80,10 +85,14 @@ export default function MyPage() {
     setActivePersona(p);
     if (p?.num) localStorage.setItem("activePersonaNum", String(p.num));
     setSelectorOpen(false);
+    try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
     // Clear IG data to avoid showing previous persona's accounts/mapping
     setIgAccounts(null);
     setIgAccountsPersonaNum(null);
     setIgError(null);
+    // Clear gallery to force reload
+    setGallery([]);
+    setGalleryError(null);
   };
 
   // After Instagram OAuth returns (?ig=connected), auto-open integrations modal and clean URL
@@ -166,6 +175,8 @@ export default function MyPage() {
     loadMapping();
   }, [activePersona?.num, integrationsOpen]);
 
+  // (제거) 인사이트 폴링은 대시보드에서만 수행
+
   const linkPersonaToIG = async (account) => {
     if (!activePersona?.num) {
       alert("먼저 프로필을 선택하세요.");
@@ -199,6 +210,28 @@ export default function MyPage() {
     []
   );
 
+  // Load chat images gallery when Photos tab is active or persona changes
+  useEffect(() => {
+    const load = async () => {
+      if (tab !== "photos") return;
+      if (!activePersona?.num) return;
+      setGalleryLoading(true);
+      setGalleryError(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/gallery?persona_num=${activePersona.num}`, { credentials: "include" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        setGallery(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        setGallery([]);
+        setGalleryError(e?.message || String(e));
+      } finally {
+        setGalleryLoading(false);
+      }
+    };
+    load();
+  }, [tab, activePersona?.num]);
+
   return (
     <main className="w-full min-h-screen bg-[#eaf5ff]">
       <div className="mx-auto max-w-6xl px-6 py-7">
@@ -207,8 +240,8 @@ export default function MyPage() {
           creditMax={creditMax}
           personaName={activePersona?.name}
           personaImg={activePersona?.img}
-          onOpenSelector={() => setSelectorOpen(true)}
           onOpenIntegrations={() => setIntegrationsOpen(true)}
+          onOpenProfileChange={() => setSelectorOpen(true)}
           loadingPersona={loadingPersona}
         />
 
@@ -268,92 +301,96 @@ export default function MyPage() {
                 <TabButton active={tab === "drafts"} onClick={() => setTab("drafts")} label="임시저장" />
                 <TabButton active={tab === "scheduled"} onClick={() => setTab("scheduled")} label="예약" />
               </div>
-              <div className="text-slate-600 font-semibold">대시보드</div>
+              <Link to="/dashboard" className="btn light">대시보드</Link>
             </div>
 
-            {(tab === "photos" || tab === "drafts" || tab === "scheduled") && (
+            {tab === "photos" && (
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm text-slate-500">갤러리 {Array.isArray(gallery) ? gallery.length : 0}장</div>
+                  <button className="btn light" onClick={() => {
+                    // manual refresh
+                    setTab("photos");
+                    // trigger effect
+                    setGalleryLoading(true);
+                    (async () => {
+                      try {
+                        const res = await fetch(`${API_BASE}/api/chat/gallery?persona_num=${activePersona?.num || ''}`, { credentials: "include" });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setGallery(Array.isArray(data?.items) ? data.items : []);
+                        }
+                      } finally { setGalleryLoading(false); }
+                    })();
+                  }}>새로고침</button>
+                </div>
+                {galleryLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
+                {galleryError && <div className="text-sm text-red-600">갤러리를 불러오지 못했습니다: {galleryError}</div>}
+                {!galleryLoading && !galleryError && Array.isArray(gallery) && gallery.length === 0 && (
+                  <Empty title="아직 생성된 이미지가 없어요" action="새로 만들기" />
+                )}
+                {!galleryLoading && !galleryError && Array.isArray(gallery) && gallery.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {gallery.map((g) => (
+                      <div key={g.id || g.key} className="relative rounded-xl overflow-hidden border border-slate-200 bg-white/60">
+                        {g.url ? (
+                          <img src={g.url} alt="" className="w-full h-36 object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-36 bg-slate-100" />
+                        )}
+                        {g.created_at && (
+                          <div className="absolute bottom-0 left-0 right-0 text-[10px] text-white/90 bg-black/30 px-2 py-1">
+                            {new Date(g.created_at).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {(tab === "drafts" || tab === "scheduled") && (
               <Card>
                 <Empty title="아직 콘텐츠가 없어요" action="새로 만들기" />
               </Card>
             )}
 
             {tab === "posts" && (
-              <Card>
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-slate-500">총 {posts.length}개</div>
-                  <select className="h-9 px-3 rounded-xl border border-slate-300 bg-white/80 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
-                    <option>전체</option>
-                    <option>발행</option>
-                    <option>예약</option>
-                    <option>초안</option>
-                    <option>작성</option>
-                  </select>
-                </div>
-                <div className="mt-3 divide-y">
-                  {posts.map((x) => (
-                    <div key={x.id} className="py-4 flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold">{x.title}</div>
-                        <div className="text-xs text-slate-500">{x.date} · {x.channel}</div>
+              <>
+                {/* 기존 게시글 리스트(자리표시) */}
+                <Card>
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-slate-500">총 {posts.length}개</div>
+                    <select className="h-9 px-3 rounded-xl border border-slate-300 bg-white/80 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+                      <option>전체</option>
+                      <option>발행</option>
+                      <option>예약</option>
+                      <option>초안</option>
+                      <option>작성</option>
+                    </select>
+                  </div>
+                  <div className="mt-3 divide-y">
+                    {posts.map((x) => (
+                      <div key={x.id} className="py-4 flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">{x.title}</div>
+                          <div className="text-xs text-slate-500">{x.date} · {x.channel}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeTone(x.status)}`}>{x.status}</span>
+                          <button className="btn light">미리보기</button>
+                          <button className="btn primary">편집</button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeTone(x.status)}`}>{x.status}</span>
-                        <button className="btn light">미리보기</button>
-                        <button className="btn primary">편집</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
+                    ))}
+                  </div>
+                </Card>
+              </>
             )}
           </section>
         </div>
       </div>
-
-      {/* Profile switcher modal */}
-      {selectorOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true">
-          <div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white/90 backdrop-blur shadow-[0_30px_70px_rgba(2,6,23,0.28)] overflow-hidden">
-            <div className="px-5 py-4 flex items-center justify-between border-b">
-              <div className="font-semibold">프로필 교체하기</div>
-              <button className="btn" onClick={() => setSelectorOpen(false)}>닫기</button>
-            </div>
-            <div className="p-5">
-              {personas?.length ? (
-                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-                  {personas.map((p) => (
-                    <button
-                      key={p.num}
-                      onClick={() => choosePersona(p)}
-                      className={`group relative rounded-2xl border ${activePersona?.num===p.num?"border-blue-400 bg-blue-50/60":"border-slate-200 bg-white/70"} overflow-hidden text-left shadow-sm hover:shadow-md transition`}
-                    >
-                      <div className="aspect-[4/5] w-full bg-gradient-to-b from-slate-100 to-slate-50">
-                        {p.img ? (
-                          <img src={p.img} alt="persona" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full grid place-items-center text-slate-400">이미지 없음</div>
-                        )}
-                      </div>
-                      <div className="px-3 py-2 flex items-center justify-between">
-                        <div className="font-semibold truncate">{p.name || `프로필 ${p.num}`}</div>
-                        {activePersona?.num === p.num && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full border bg-blue-100 text-blue-700 border-blue-200">선택됨</span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-10 text-slate-500">등록된 프로필이 없습니다. 새로 만들어보세요.</div>
-              )}
-              <div className="mt-5 flex items-center justify-between">
-                <button className="btn" onClick={() => setSelectorOpen(false)}>취소</button>
-                <Link to="/imgcreate" className="btn primary">새 프로필 만들기</Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Integrations modal */}
       {integrationsOpen && (
@@ -407,19 +444,81 @@ export default function MyPage() {
           </div>
         </div>
       )}
+
+      {/* MyPage local profile change modal */}
+      {selectorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,23,42,0.45)] p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setSelectorOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white/90 backdrop-blur shadow-[0_30px_70px_rgba(2,6,23,0.28)] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 flex items-center justify-between border-b">
+              <div className="font-semibold">프로필 교체하기</div>
+              <button className="btn" onClick={() => setSelectorOpen(false)}>닫기</button>
+            </div>
+            <div className="p-5">
+              {loadingPersona ? (
+                <div className="h-24 rounded-xl bg-slate-100 animate-pulse" />
+              ) : (
+                <ul className="divide-y">
+                  {Array.isArray(personas) && personas.length > 0 ? (
+                    personas.map((p) => (
+                      <li key={p.num}>
+                        <button
+                          className="w-full flex items-center gap-3 px-2 py-2 hover:bg-slate-50"
+                          onClick={() => choosePersona(p)}
+                        >
+                          {p.img ? (
+                            <img src={p.img} alt="" className="w-9 h-9 rounded-full object-cover border" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-slate-200" />
+                          )}
+                          <div className="flex-1 text-left text-sm font-semibold">{p.name || `프로필 ${p.num}`}</div>
+                        </button>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-slate-500 px-2 py-3">프로필이 없습니다.</li>
+                  )}
+                </ul>
+              )}
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  className="btn light"
+                  onClick={() => {
+                    setSelectorOpen(false);
+                    try { window.dispatchEvent(new CustomEvent("open-imgcreate")); } catch {}
+                  }}
+                >
+                  새 프로필 만들기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
-}
+}          
 
-function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenSelector, onOpenIntegrations, loadingPersona }) {
-  const guideImg = "./img/fixed_face.png";
+function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenIntegrations, onOpenProfileChange, loadingPersona }) {
   const pct = Math.min(100, Math.round((credit / creditMax) * 100));
   return (
     <div className="rounded-3xl border border-slate-200 bg-white/80 backdrop-blur p-6 shadow-[0_10px_30px_rgba(30,64,175,0.08)]">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
         <div className="flex items-center gap-4">
           <div className="relative w-50 h-50 rounded-full overflow-hidden border border-slate-200 bg-white">
-            <img src={personaImg || guideImg} alt="" className="w-full h-full object-cover" />
+            {/* 기본 이미지 대신 빈 값 처리: 이미지가 없으면 숨김 */}
+            {personaImg ? (
+              <img src={personaImg} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-slate-100" />
+            )}
             <span className="absolute -bottom-1 -right-1 inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px]">온라인</span>
           </div>
           <div>
@@ -429,9 +528,9 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenSelec
             </div>
             <div className="text-sm text-slate-500">마이페이지에서 활동 프로필을 관리하세요.</div>
             <div className="mt-2 flex gap-6 text-sm">
-              <Stat label="팔로워" value="0" />
-              <Stat label="참여율" value="0%" />
-              <Stat label="주간도달" value="0" />
+              <Stat label="팔로워" value="-" />
+              <Stat label="참여율" value="-" />
+              <Stat label="주간도달" value="-" />
             </div>
           </div>
         </div>
@@ -442,10 +541,10 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenSelec
             <span>{credit} / {creditMax}</span>
           </div>
           <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full bg-gradient-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
+            <div className="h-full bg-linear-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
           </div>
           <div className="mt-3 flex gap-2">
-            <button className="btn primary grow" onClick={onOpenSelector}>프로필 교체하기</button>
+            <button className="btn primary grow" onClick={onOpenProfileChange}>프로필 교체하기</button>
             <button className="btn light" onClick={onOpenIntegrations}>연동관리</button>
           </div>
         </div>
@@ -511,4 +610,62 @@ function badgeTone(s) {
   if (s === "발행") return "bg-emerald-100 text-emerald-700 border-emerald-200";
   if (s === "예약") return "bg-blue-100 text-blue-700 border-blue-200";
   return "bg-slate-100 text-slate-700 border-slate-200";
+}
+
+// ===== Insights helpers/components =====
+function fmtNum(v) {
+  if (v === null || v === undefined) return '-';
+  const n = Number(v);
+  if (Number.isNaN(n)) return String(v);
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K';
+  return String(n);
+}
+
+function sumSeries(arr) {
+  if (!Array.isArray(arr)) return '-';
+  const s = arr.reduce((acc, x) => acc + (Number(x?.value) || 0), 0);
+  return fmtNum(s);
+}
+
+function trendText(follows, unfollows) {
+  if (!Array.isArray(follows) || !Array.isArray(unfollows)) return '-';
+  const sumF = follows.reduce((a, x) => a + (Number(x?.value) || 0), 0);
+  const sumU = unfollows.reduce((a, x) => a + (Number(x?.value) || 0), 0);
+  const net = sumF - sumU;
+  const sign = net > 0 ? '+' : net < 0 ? '' : '';
+  return `순증가 ${sign}${fmtNum(net)}`;
+}
+
+function InsightStat({ label, value, sub, spark }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="text-xl font-bold mt-0.5">{value ?? '-'}</div>
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
+      {Array.isArray(spark) && spark.length > 1 && (
+        <div className="mt-2 h-10">
+          <Sparkline data={spark.map((p) => Number(p.value) || 0)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Sparkline({ data = [] }) {
+  const w = 120, h = 36;
+  const max = Math.max(...data, 1);
+  const min = Math.min(...data, 0);
+  const span = Math.max(max - min, 1);
+  const step = data.length > 1 ? (w / (data.length - 1)) : w;
+  const points = data.map((v, i) => {
+    const x = i * step;
+    const y = h - ((v - min) / span) * h;
+    return `${x},${y}`;
+  }).join(' ');
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
+      <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+    </svg>
+  );
 }

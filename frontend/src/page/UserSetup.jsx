@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import fixedFace from "../../img/fixed_face.png";
 import ProfileSelect from "./ProfileSelect";
+import { API_BASE } from "@/api/client";
 
 /**
  * SelfStar 온보딩 (EAF5FE 계열)
@@ -43,7 +44,7 @@ export default function SelfStarOnboarding({ onComplete }) {
     setError(null);
     try {
       // 서버에 성별+생년월일 동시 저장
-      const res = await fetch("/users/me/profile", {
+      const res = await fetch(`${API_BASE}/api/users/me/profile`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         credentials: "include",

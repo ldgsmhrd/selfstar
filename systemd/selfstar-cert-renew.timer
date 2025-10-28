@@ -1,0 +1,9 @@
+[Unit]
+Description=Monthly Let's Encrypt renew for selfstar.duckdns.org
+
+[Timer]
+OnCalendar=monthly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

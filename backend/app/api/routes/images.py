@@ -1,44 +1,20 @@
-# backend/app/routes/images.py
+"""이미지 API 라우트: AI 미리보기, 오브젝트 스토리지(S3) 저장, 프리사인 URL 재발급"""
 from fastapi import APIRouter, HTTPException, Request
 import os
 import httpx
 import logging
-import base64
 import re
-import uuid
-from datetime import datetime
 
-from app.api.schemas.images import GenerateImageRequest, ImageSaveRequest
+from app.api.schemas.images import (
+    GenerateImageRequest,
+    ImageSaveRequest,
+    ImageUrlRequest,
+)
+from app.core.s3 import s3_enabled, put_data_uri, presign_get_url
+from app.api.models.persona import update_persona_img
 
 router = APIRouter(prefix="/api", tags=["images"])
 log = logging.getLogger("images")
-
-def _save_data_uri(data_uri: str):
-    m = re.match(r"^data:(.*?);base64,(.*)$", data_uri)
-    if not m:
-        raise ValueError("invalid_data_uri")
-    mime, b64 = m.groups()
-    ext = {
-        "image/png": ".png",
-        "image/jpeg": ".jpg",
-        "image/jpg": ".jpg",
-        "image/webp": ".webp",
-        "image/svg+xml": ".svg",
-    }.get(mime, ".bin")
-    raw = base64.b64decode(b64)
-
-    # 저장 위치: MEDIA_ROOT (기본 backend/app/media)
-    app_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    media_root = os.getenv("MEDIA_ROOT") or os.path.join(app_dir, "media")
-    os.makedirs(media_root, exist_ok=True)
-    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    fname = f"gen_{ts}_{uuid.uuid4().hex[:8]}{ext}"
-    out_path = os.path.join(media_root, fname)
-    with open(out_path, "wb") as f:
-        f.write(raw)
-    # 정적 서빙 경로에 맞춘 URL 생성
-    rel_url = f"/media/{fname}"
-    return out_path, rel_url
 
 
 
@@ -63,13 +39,74 @@ async def preview_image(payload: GenerateImageRequest):
 
 
 @router.post("/images/save", summary="미리보기 데이터 저장")
-async def save_image(body: ImageSaveRequest):
+async def save_image(body: ImageSaveRequest, request: Request):
+    """미리보기 이미지를 저장합니다.
+
+    동작:
+    - S3(오브젝트 스토리지) 설정이 필수입니다.
+    - 업로드 후 {key, url(프리사인)}을 반환합니다.
+    """
     try:
-        _, url = _save_data_uri(body.image)
-        log.info("saved preview to %s", url)
-        return {"ok": True, "url": url}
+    # 세션에서 사용자 확인 (DB 기록 및 권한 확인용)
+        user_id = request.session.get("user_id")
+        if not user_id:
+            # 로컬 검증 전용(개발 모드): DEV_ALLOW_DEBUG_USER=1일 때 X-Debug-User-Id 헤더 허용
+            if os.getenv("DEV_ALLOW_DEBUG_USER", "0") in ("1", "true", "yes"):
+                try:
+                    debug_uid = request.headers.get("X-Debug-User-Id")
+                    if debug_uid and debug_uid.isdigit():
+                        user_id = int(debug_uid)
+                except Exception:
+                    pass
+        if not user_id:
+            raise HTTPException(status_code=401, detail="not_authenticated")
+
+
+
+        if not s3_enabled():
+            raise HTTPException(status_code=400, detail="s3_not_configured")
+
+        key = put_data_uri(
+            body.image,
+            model=body.model,
+            key_prefix=body.prefix,
+            base_prefix=(body.base_prefix if body.base_prefix is not None else None),
+            include_model=bool(body.include_model) if body.include_model is not None else True,
+            include_date=bool(body.include_date) if body.include_date is not None else True,
+        )
+        url = presign_get_url(key)
+    # 선택: body.persona_num 이 있으면 ss_persona.persona_img 에 즉시 저장
+        if body.persona_num:
+            try:
+                await update_persona_img(int(user_id), int(body.persona_num), key)
+            except Exception as _e:
+                log.warning("failed to update persona_img: %s", _e)
+        return {"ok": True, "key": key, "url": url}
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid_data_uri")
+    except HTTPException:
+        raise
     except Exception as e:
-        log.warning("failed to save media: %s", e)
+        log.warning("failed to save image: %s", e)
         raise HTTPException(status_code=500, detail="save_failed")
+
+
+    
+
+
+@router.post("/images/url", summary="S3 오브젝트 URL 재발급(프리사인)")
+async def renew_image_url(req: ImageUrlRequest):
+    """기존 오브젝트 키에 대한 프리사인 GET URL을 재발급합니다.
+
+    S3 설정이 필요하며, 미설정 시 400을 반환합니다.
+    """
+    try:
+        if not s3_enabled():
+            raise HTTPException(status_code=400, detail="s3_not_configured")
+        url = presign_get_url(req.key)
+        return {"ok": True, "key": req.key, "url": url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("failed to presign url for %s: %s", req.key, e)
+        raise HTTPException(status_code=500, detail="presign_failed")

@@ -7,6 +7,9 @@ import TypingText from "../components/TypingText";
 import Field from "../components/Field";
 import StyleTag from "../components/StyleTag";
 
+// API base join helper: API_BASE("", "https://...") 모두 안전
+const api = (path) => `${(API_BASE || "").replace(/\/$/, "")}${path}`;
+
 /* ========================= Home ========================= */
 function Home({ compact = false }) {
   const location = useLocation();
@@ -36,7 +39,7 @@ function Home({ compact = false }) {
     };
   }, [isEmbed]);
   // 기본 필드
-  const [name, setName] = useState("이빛나");
+  const [name, setName] = useState("");
   const [gender, setGender] = useState("여");
   const [age, setAge] = useState(23);
 
@@ -116,7 +119,7 @@ function Home({ compact = false }) {
       bodyType,
       glasses,
       personalities,
-    ],
+    ]
   );
 
   // 마지막 생성 이후로 입력이 변경되었는지
@@ -149,15 +152,13 @@ function Home({ compact = false }) {
   );
 
   const onGenerate = async () => {
-    if (loading) return;              // ✅ CHANGED: 더블클릭 방지
+    if (loading) return;
     setGenerated(null);
     setError(null);
     setGeneratedUrl("");
     setStatus("");
     setLoading(true);
 
-    // ✅ CHANGED: 문장 합치기(feature/featureCombined) 제거.
-    // 사용자가 고른 값을 "그대로" 보낸다.
     const payload = currentPayload;
 
     const MAX_RETRY = 2;
@@ -167,11 +168,12 @@ function Home({ compact = false }) {
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 60_000);
 
-        const res = await fetch(`${API_BASE}/api/images/preview`, {
+        // POST /api/images/preview: 이미지 생성 미리보기 요청 (저장 없음)
+        const res = await fetch(api("/api/images/preview"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify(payload),  // 필드 그대로
+          body: JSON.stringify(payload),
           signal: controller.signal,
         });
 
@@ -222,8 +224,9 @@ function Home({ compact = false }) {
     setError(null);
     try {
       // 1) 사용자 프로필 저장 (생일/성별)
-      console.log("[save] step1 PUT /users/me/profile", { birthday: bday, gender: mappedGender });
-      const res = await fetch(`${API_BASE}/users/me/profile`, {
+  // PUT /api/users/me/profile: 사용자 프로필(생일/성별) 저장
+  console.log("[save] step1 PUT /api/users/me/profile", { birthday: bday, gender: mappedGender });
+      const res = await fetch(api(`/api/users/me/profile`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -235,39 +238,21 @@ function Home({ compact = false }) {
       const data = await res.json();
       if (!data?.ok) throw new Error(data?.message || "프로필 저장 실패");
 
-      // 2) 생성된 이미지 파일 저장 (data URI -> /media/*.png)
-      if (!generated) throw new Error("이미지 미리보기가 없습니다. 먼저 생성해주세요.");
-      console.log("[save] step2 POST /api/images/save (JSON), dataURI length=", generated?.length ?? 0);
-      const saveImg = await fetch(`${API_BASE}/api/images/save`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ image: generated }),
-      });
-      console.log("[save] step2 status", saveImg.status);
-      if (saveImg.status === 401) throw new Error("로그인이 필요합니다.");
-      if (!saveImg.ok) {
-        const t = await saveImg.text().catch(() => "");
-        throw new Error(`이미지 저장 실패: ${saveImg.status} ${t || ""}`.trim());
-      }
-      const saved = await saveImg.json();
-      const mediaUrl = saved?.url;
-      if (!mediaUrl) throw new Error("이미지 저장 경로가 비어있습니다.");
-      console.log("[save] step2 ok, mediaUrl=", mediaUrl);
-
-      // 3) 페르소나 저장 (/personas/setting)
+      // 2) 페르소나 저장 먼저 실행하여 번호 확보 (/api/personas/setting)
       const personaBody = {
-        persona_img: mediaUrl,
+        // 임시 이미지 값: '/media/pending' 로 두어 서버의 S3 presign 시도를 피함
+        persona_img: "/media/pending",
         persona_parameters: currentPayload,
       };
-      console.log("[save] step3 PUT /personas/setting", personaBody);
-      const savePersona = await fetch(`${API_BASE}/personas/setting`, {
+  // PUT /api/personas/setting: 페르소나 생성(번호 발급)
+  console.log("[save] step2 PUT /api/personas/setting (create persona first)", personaBody);
+      const savePersona = await fetch(api(`/api/personas/setting`), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify(personaBody),
       });
-      console.log("[save] step3 status", savePersona.status);
+      console.log("[save] step2 status", savePersona.status);
       if (savePersona.status === 400) {
         // 서버에서 제한 초과 시 detail 전달: persona_limit_reached
         const t = await savePersona.text();
@@ -281,25 +266,55 @@ function Home({ compact = false }) {
         const t = await savePersona.text().catch(() => "");
         throw new Error(`페르소나 저장 실패: ${savePersona.status} ${t || ""}`.trim());
       }
-  const savedPersona = await savePersona.json();
-  if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
-  const personaNum = savedPersona?.persona_num;
+      const savedPersona = await savePersona.json();
+      if (!savedPersona?.ok) throw new Error(savedPersona?.message || "페르소나 저장 실패");
+      const personaNum = savedPersona?.persona_num;
+      if (typeof personaNum !== "number") throw new Error("유효한 페르소나 번호를 받지 못했습니다.");
+
+      // 3) 생성된 이미지 파일을 최종 경로로 저장 (S3: personas/{num}/png)
+      if (!generated) throw new Error("이미지 미리보기가 없습니다. 먼저 생성해주세요.");
+      const saveBody = {
+        image: generated,
+        // 경로 구성 옵션: dev/ 제거, personas/ 바로 하위에 이미지 저장 (하위 폴더 없음)
+        base_prefix: "", // 기본 prefix 비활성화 (예: dev/ 제거)
+        prefix: "personas",
+        include_model: false,
+        include_date: false,
+        persona_num: personaNum,
+      };
+  // POST /api/images/save: 미리보기 이미지를 S3에 최종 저장 (DB 링크 자동 반영)
+  console.log("[save] step3 POST /api/images/save", { ...saveBody, image: `[dataURI ${generated?.length ?? 0}]` });
+      const saveImg = await fetch(api(`/api/images/save`), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(saveBody),
+      });
+      console.log("[save] step3 status", saveImg.status);
+      if (saveImg.status === 401) throw new Error("로그인이 필요합니다.");
+      if (!saveImg.ok) {
+        const t = await saveImg.text().catch(() => "");
+        throw new Error(`이미지 저장 실패: ${saveImg.status} ${t || ""}`.trim());
+      }
+      const saved = await saveImg.json();
+      const mediaUrl = saved?.url;
+      const s3Key = saved?.key;
+      if (!mediaUrl) throw new Error("이미지 저장 URL을 받지 못했습니다.");
+      console.log("[save] step3 ok, url=", mediaUrl, "key=", s3Key);
+      // 업로드된 정식 URL로 프리뷰 전환 (dataURI -> 네트워크 URL)
+      try { setGeneratedUrl(mediaUrl); } catch {}
 
       setStatus("프로필/페르소나 저장 완료");
-      // 저장 완료 후: 새 프로필 번호를 Chat에 바로 전달하여 이미지 생성까지 이어갈 수 있도록 이벤트 발행
+      // 저장 완료 후: 새 프로필 번호를 시스템에 전달하고, 활성 프로필로 지정
       try {
         if (typeof personaNum === "number") {
-          // 로컬(동일 윈도우) 이벤트: 출처 표기(from: 'imgcreate')
+          try { localStorage.setItem("activePersonaNum", String(personaNum)); } catch {}
+          // 로컬 이벤트로 알림
           window.dispatchEvent(new CustomEvent("persona-created", { detail: { persona_num: personaNum, from: "imgcreate" } }));
-          // iframe 부모 창에도 postMessage로 알림
+          // iframe 부모 창에도 알림
           if (window.parent && window.parent !== window) {
             window.parent.postMessage({ type: "persona-created", persona_num: personaNum, from: "imgcreate" }, "*");
           }
-        }
-        // 또한 프로필 선택 모달도 새로 띄워 최신 목록 확인 가능
-        window.dispatchEvent(new CustomEvent("open-profile-select"));
-        if (window.parent && window.parent !== window) {
-          window.parent.postMessage({ type: "open-profile-select" }, "*");
         }
       } catch { /* noop */ }
     } catch (e) {
@@ -313,8 +328,8 @@ function Home({ compact = false }) {
     <>
       <StyleTag />
 
-  <main className={isEmbed ? "mx-auto w-full max-w-[1080px] p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
-    <div className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}>
+      <main className={isEmbed ? "mx-auto w-full max-w-[1080px] p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
+        <div className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}>
           {/* 좌측 미리보기 카드 */}
           <section className="card overflow-hidden h-full z-0 bg-white">
             <div className="bg-black flex items-center justify-center">
@@ -344,10 +359,9 @@ function Home({ compact = false }) {
               <p className="text-xs md:text-sm text-slate-600">얼굴 ID를 고정할 때 일상과 바뀐 다양한 결과를 얻을 수 있습니다.</p>
             </div>
           </section>
-          
 
           {/* 우측 입력 카드 */}
-          <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:left-[-12px]'}`}>
+          <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:-left-3'}`}>
             {/* 말풍선 헤더 */}
             <div className="flex items-start gap-3 mb-4">
               <img src={guideImg} alt="guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full object-cover border" />
@@ -364,7 +378,6 @@ function Home({ compact = false }) {
                   className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="이빛나"
                 />
               </Field>
 
@@ -382,8 +395,6 @@ function Home({ compact = false }) {
                 </div>
               </Field>
             </div>
-
-            {/* 인스타 핸들 입력 제거 (기본 null 저장) */}
 
             {/* 나이 */}
             <div className="grid grid-cols-2 gap-4 mt-1">

@@ -1,50 +1,46 @@
+# Global ignores for repo
+# OS/editor
 .DS_Store
 Thumbs.db
-
-# Python
+.vscode/
+.idea/
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
-*.pyd
-*.so
-*.egg-info/
-.eggs/
-.venv/
-venv/
-
-# Project-specific
-backend/.venv/
-ai/mlruns/
-.env
-backend/.env
-frontend/.env
-ai/.env
-**/.env
-backend/python312-amd64.exe
 
 # Node
 node_modules/
-frontend/node_modules/
 *.log
 
-# Jupyter
-.ipynb_checkpoints/
+# Python venvs
+.venv/
+venv/
 
-# VS Code
-.vscode/
+# Jupyter output
+*.ipynb_checkpoints/
 
-# Vite cache at repo root
-.vite/
+# Docker/compose artifacts
+*.pid
 
-# Local backups (moved editor/cache folders)
-.backup_local/
+# Env files (keep examples)
+.env
+.env.*
+!important.env.example
+!important.*.env.example
+!/env/*.env.example
 
-# Secrets and credentials (never commit)
-ai/training/client_secrets.json
-ai/training/pydrive2_credentials.json
+# Env directory: ignore secrets and local variants
+/env/*.dev
+/env/*.prod
+/env/*.prod.*
+/env/*.local
+/env/*.secret
+/env/*.bak*
 
-# Training artifacts
-ai/training/training_package.zip
-
-# Generated media files
-backend/app/media/
+# Build outputs
+/frontend/dist/
+/frontend/.dist/
+/ai/mlruns/
+/ai/data/
+!/ai/data/samples/
+!/ai/data/samples/**/*

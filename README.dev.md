@@ -1,6 +1,6 @@
 # Dev mode with hot reload
 
-Run Docker services with live reload for backend, frontend, and AI.
+Run all services with live reload and bind mounts for faster iteration on Windows.
 
 ## Start (dev override)
 
@@ -13,6 +13,11 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 - frontend: Vite dev server (chokidar polling)
 - ai: uvicorn --reload
 
+Volumes
+- backend: mounts `backend/app` and persists `backend/app/storage` → served at `/files`
+- frontend: mounts `frontend/`
+- ai: mounts `ai/`
+
 ## Stop
 
 ```powershell
@@ -20,6 +25,7 @@ docker compose down
 ```
 
 ## Troubleshooting
-- Code changes not reflected: ensure you started from the repo root so bind volumes mount correctly.
+- Code changes not reflected: start compose from repo root so bind mounts apply.
 - Backend not reloading: check logs for "Detected change... reloading".
-- Frontend not reloading: hard refresh the browser (Ctrl+F5). On Windows, polling is enabled (CHOKIDAR_USEPOLLING).
+- Frontend not reloading: hard refresh (Ctrl+F5). On Windows, polling is enabled (CHOKIDAR_USEPOLLING).
+- Instagram uploads fail in dev: ensure BACKEND_URL is public HTTPS (use ngrok) so Graph API can fetch files.

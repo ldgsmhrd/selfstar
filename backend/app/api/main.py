@@ -53,10 +53,10 @@ app.add_middleware(
 
 # ----- Routers -----
 # auth.router 내부가 APIRouter(prefix="/auth")이면 여기서는 prefix를 다시 붙이지 않습니다.
-app.include_router(auth.router)
+app.include_router(auth.router, prefix="/api")
 app.include_router(images.router)
 app.include_router(persona.router)
-app.include_router(chat_route.router)
+app.include_router(chat_route.router, prefix="/api")
 
 if HAS_POSTS:
     app.include_router(posts.router)      # posts.router 안에 prefix가 없으면: app.include_router(posts.router, prefix="/posts")
@@ -69,3 +69,5 @@ def root():
 @app.get("/__routes")
 def __routes():
     return sorted([getattr(r, "path", "") for r in app.router.routes])
+
+

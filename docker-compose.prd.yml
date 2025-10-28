@@ -1,0 +1,97 @@
+version: "3.9"
+# Production deployment stack for selfstar.duckdns.org with Nginx reverse proxy and TLS (Let's Encrypt)
+services:
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: selfstar-nginx
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Nginx virtual host config
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # ACME HTTP-01 webroot for initial/renewal challenges
+      - certbot-webroot:/var/www/certbot
+      # Let's Encrypt certificates (read-only for nginx)
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    networks:
+      - web
+  # One-off container to request/renew certificates. See README for commands.
+  certbot:
+    image: certbot/certbot:latest
+    container_name: selfstar-certbot
+    volumes:
+      - certbot-webroot:/var/www/certbot
+      - /etc/letsencrypt:/etc/letsencrypt
+    networks:
+      - web
+    # No command by default; run ad-hoc with docker compose run certbot ...
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    container_name: selfstar-backend
+    restart: unless-stopped
+    env_file:
+      - ./env/backend.env
+    environment:
+      # Ensure app knows its own/public URLs
+      - BACKEND_URL=https://selfstar.duckdns.org
+      - FRONTEND_URL=https://selfstar.duckdns.org
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*", "--timeout-keep-alive", "65"]
+    expose:
+      - "8000"
+    depends_on:
+      - ai
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).getcode()==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+  # For first iteration we proxy to Vite dev/preview server.
+  # Consider switching to a production static build served by nginx (see README).
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: selfstar-frontend
+    restart: unless-stopped
+    env_file:
+      - ./env/frontend.env
+    expose:
+      - "5174"
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:5174',r=>process.exit(0)).on('error',()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+  # Internal-only AI serving; backend calls this via AI_BASE_URL
+  ai:
+    build:
+      context: ai
+      dockerfile: serving/Dockerfile
+    container_name: selfstar-ai
+    restart: unless-stopped
+    env_file:
+      - ./env/ai.env
+    expose:
+      - "8600"
+    networks:
+      - web
+networks:
+  web:
+    driver: bridge
+volumes:
+  certbot-webroot:

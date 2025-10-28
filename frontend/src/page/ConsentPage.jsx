@@ -18,8 +18,6 @@ export default function ConsentPage() {
       () => [
          { text: "안녕하세요, 저는 ", bold: false },
          { text: "SelfStar 가이드", bold: true },
-         { text: " ", bold: false },
-         { text: "이빛나", bold: true },
          { text: "입니다. 가입을 완료하려면 ", bold: false },
          { text: "회원가입약관", bold: true },
          { text: ", ", bold: false },

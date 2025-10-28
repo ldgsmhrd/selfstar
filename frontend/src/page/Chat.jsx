@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import ProfileSelect from "./ProfileSelect.jsx";
-import { Bot, Hash, Image as ImageIcon, Loader2, MessageSquare, Settings2, User, ChevronsRight } from "lucide-react";
+import { Image as ImageIcon, Loader2, MessageSquare, User, ChevronsRight, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+// removed hashtags UI; badge no longer needed
+import { API_BASE } from "@/api/client";
 
 // Helpers
 const mockCaption = (prompt, vibe) => {
@@ -42,10 +43,8 @@ export default function Chat() {
   const messagesEndRef = useRef(null);
   const [current, setCurrent] = useState(null);
   const [askProfile, setAskProfile] = useState(true);
-  // Force-refresh ProfileSelect list when a saved profile arrives
-  const [profileRefresh, setProfileRefresh] = useState(0);
-  // If a persona was just created, remember its num for auto-pick
-  const [autoPickNum, setAutoPickNum] = useState(null);
+  // Track if we've already requested the global profile selector to open
+  const requestedSelectorRef = useRef(false);
 
   // chat messages; if image present, render image bubble
   const [messages, setMessages] = useState([
@@ -54,7 +53,6 @@ export default function Chat() {
 
   // options/inputs
   const [lockedFace, setLockedFace] = useState(true);
-  const [ratio, setRatio] = useState("3:4");
   const [prompt, setPrompt] = useState("패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈");
   const [isGenerating, setIsGenerating] = useState(false);
   // Multi-image preview state with carousel controls
@@ -90,6 +88,73 @@ export default function Chat() {
       setPreviewIndex(newIdx);
       return next;
     });
+  };
+
+  const isHttpUrl = (s) => typeof s === "string" && /^https?:\/\//i.test(s);
+
+  // 엔드포인트: POST /files/ensure_public
+  // payload: { image: dataURI|/files/상대경로|http(s)URL, persona_num? }
+  // 반환: { ok, url(절대), path? }
+  const ensurePublicUrl = async (img) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/files/ensure_public`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ image: img, persona_num: current?.num }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok || !data?.url) throw new Error(typeof data?.detail === "string" ? data.detail : JSON.stringify(data));
+      return data.url;
+    } catch (e) {
+      throw e;
+    }
+  };
+
+  // 엔드포인트: POST /instagram/publish
+  // payload: { persona_num, image_url(절대 URL), caption }
+  const uploadToInstagram = async () => {
+    if (!current?.num) {
+      alert("먼저 페르소나를 선택해 주세요.");
+      return;
+    }
+    if (!currentPreview) {
+      alert("프리뷰에 이미지가 없습니다.");
+      return;
+    }
+    let uploadUrl = currentPreview;
+    if (!isHttpUrl(uploadUrl)) {
+      try {
+        uploadUrl = await ensurePublicUrl(uploadUrl);
+      } catch (e) {
+        alert(`공개 URL 변환 실패: ${e}`);
+        return;
+      }
+    }
+    const caption = `${mockCaption(prompt, vibe)}\n\n${mockHashtags(prompt).join(" ")}`.slice(0, 2200);
+    try {
+      const res = await fetch(`${API_BASE}/api/instagram/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ persona_num: current.num, image_url: uploadUrl, caption }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401 && (data?.detail === "persona_oauth_required")) {
+        if (confirm("인스타그램 계정 연동이 필요합니다. 지금 연결할까요?")) {
+          const url = `${API_BASE}/oauth/instagram/start?persona_num=${encodeURIComponent(current.num)}&picker=1&fresh=1`;
+          window.location.href = url;
+        }
+        return;
+      }
+      if (!res.ok || !data?.ok) {
+        alert(`업로드 실패: ${typeof data?.detail === "string" ? data.detail : JSON.stringify(data)}`);
+        return;
+      }
+      alert("인스타그램 업로드를 요청했습니다. 잠시 후 계정에서 게시물을 확인해 주세요.");
+    } catch (e) {
+      alert(`업로드 중 오류: ${e}`);
+    }
   };
   const handleDropOnPreview = (e) => {
     e.preventDefault();
@@ -151,7 +216,8 @@ export default function Chat() {
     }
   };
 
-  // Generate image via backend /chat/image
+  // 엔드포인트: POST /chat/image
+  // payload: { persona_num, user_text, ls_session_id?, style_img? }
   const generate = async () => {
     if (!current?.num) {
       alert("먼저 페르소나를 선택해 주세요.");
@@ -168,9 +234,10 @@ export default function Chat() {
     try {
       // Strengthen instruction when outfit toggle is on
       const styleLockNote = "Keep the exact same outfit from the style reference image. Do not change garment category, color, material, pattern, length, silhouette, or layers.";
+      const instaAspectNote = "Output a single vertical image strictly in 4:5 aspect ratio (portrait for Instagram feed). Aim for approximately 1080x1350 resolution. Fill the frame; no borders or letterboxing.";
       const payload = {
         persona_num: current.num,
-        user_text: usePrevAsStyle ? `${prompt}\n[STYLE_ENFORCE] ${styleLockNote}` : prompt,
+        user_text: `${prompt}\n[ASPECT] ${instaAspectNote}` + (usePrevAsStyle ? `\n[STYLE_ENFORCE] ${styleLockNote}` : ""),
         ls_session_id: lsSessionId,
       };
       // If toggle is on and we have a current preview, attach it as a style reference to preserve outfit
@@ -178,7 +245,7 @@ export default function Chat() {
         payload.style_img = currentPreview;
       }
       console.log("[Chat] POST /chat/image ->", payload);
-      const res = await fetch(`/chat/image`, {
+      const res = await fetch(`${API_BASE}/api/chat/image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -240,54 +307,42 @@ export default function Chat() {
     return () => clearTimeout(t);
   }, [flight?.started, previewImages.length]);
 
-  // Start a LangSmith session when entering chat; end when leaving
+  // Start/end LangSmith session helpers
+  const startSession = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/session/start`, { method: "POST", credentials: "include" });
+      const data = await res.json().catch(() => ({}));
+      if (data?.ok && data?.ls_session_id) setLsSessionId(data.ls_session_id);
+    } catch { /* noop */ }
+  };
+  const endSession = async () => {
+    if (!lsSessionId) return;
+    try {
+      await fetch(`${API_BASE}/api/chat/session/end`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ ls_session_id: lsSessionId }),
+      });
+    } catch { /* noop */ }
+  };
+  // End session on unmount (session starts when persona is chosen)
   useEffect(() => {
-    let active = true;
-    (async () => {
-      try {
-        const res = await fetch(`/chat/session/start`, { method: "POST", credentials: "include" });
-        const data = await res.json().catch(() => ({}));
-        if (active && data?.ok && data?.ls_session_id) setLsSessionId(data.ls_session_id);
-      } catch {
-        /* noop */
-      }
-    })();
-    return () => {
-      active = false;
-      if (lsSessionId) {
-        try {
-          fetch(`/chat/session/end`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ ls_session_id: lsSessionId }),
-          }).catch(() => {});
-        } catch {
-          /* noop */
-        }
-      }
-    };
+    return () => { endSession(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Listen for external open-profile-select event (from Imgcreate flow)
+  // Listen for external open-profile-select and persona events (App coordinates the global modal)
   useEffect(() => {
     const onOpenProfileSelect = () => {
       setAskProfile(true);
       setCurrent(null);
-      setProfileRefresh((v) => v + 1);
     };
     window.addEventListener("open-profile-select", onOpenProfileSelect);
-    // When a new persona is created, open selector and auto-pick it
+    // When a new persona is created, just open selector (no auto-pick)
     const onPersonaCreated = (e) => {
-      const num = e?.detail?.persona_num;
-      if (num == null) return;
-      // App에서 이미 forward 한 이벤트만 소비 (from: 'app-forward')
-      const from = e?.detail?.from;
-      if (from && from !== "app-forward") return;
-      setAutoPickNum(Number(num));
       setAskProfile(true);
       setCurrent(null);
-      setProfileRefresh((v) => v + 1);
     };
     // App에서 사용자가 선택한 프로필을 직접 주입하는 경우
     const onPersonaChosen = (e) => {
@@ -296,7 +351,13 @@ export default function Chat() {
       const c = { name: p.name, num: p.num, img: p.img, avatar: p.img || avatarFromName(p.name) };
       setCurrent(c);
       setAskProfile(false);
-      setAutoPickNum(null);
+      // Reset chat state and start a fresh session with the selected persona
+      setMessages([{ id: 1, role: "assistant", text: "인플루언서를 선택하거나 생성해 주세요. 우측 도우미에서 캡션/해시태그를 복사할 수 있습니다.", ts: Date.now() }]);
+      setPreviewImages([]);
+      setPreviewIndex(0);
+      setShowPreviewHint(false);
+      // start a new session only now
+      (async () => { await startSession(); })();
     };
     window.addEventListener("persona-created", onPersonaCreated);
     window.addEventListener("persona-chosen", onPersonaChosen);
@@ -307,30 +368,22 @@ export default function Chat() {
     };
   }, []);
 
-  // Profile selection modal
+  // If we need a profile, request the global selector once
+  useEffect(() => {
+    if ((askProfile || !current) && !requestedSelectorRef.current) {
+      requestedSelectorRef.current = true;
+      try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch {}
+    }
+    if (current) {
+      requestedSelectorRef.current = false;
+    }
+  }, [askProfile, current]);
+
+  // If a profile is needed, rely on the App-level global modal and render a lightweight placeholder backdrop
   if (askProfile || !current) {
     return (
-      <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(15,23,42,0.45)", display: "grid", placeItems: "center", padding: 16 }}>
-        <div style={{ position: "relative", width: "min(1200px, 98vw)", maxHeight: "90dvh", overflow: "hidden", borderRadius: 18, boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff", padding: 16 }}>
-          <button aria-label="닫기" onClick={() => navigate("/")} style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155" }}>×</button>
-          <ProfileSelect
-            key={profileRefresh}
-            maxSlots={4}
-            onProfileChosen={(sel) => {
-              const c = { name: sel.name, num: sel.num, img: sel.img, avatar: sel.img || avatarFromName(sel.name) };
-              setCurrent(c);
-              setAskProfile(false);
-              // reset auto-pick after success
-              setAutoPickNum(null);
-            }}
-            onAddProfileClick={() => {
-              setAskProfile(false);
-              window.dispatchEvent(new CustomEvent("open-imgcreate"));
-            }}
-            autoPickNum={autoPickNum}
-            refreshKey={profileRefresh}
-          />
-        </div>
+      <div className="fixed inset-0 grid place-items-center bg-[rgba(15,23,42,0.35)]">
+        <div className="text-white text-sm opacity-80">프로필 선택 창이 열렸습니다…</div>
       </div>
     );
   }
@@ -340,14 +393,14 @@ export default function Chat() {
       {/* Center: chat */}
       <main className="col-span-12 xl:col-span-8 rounded-xl border bg-white/80 backdrop-blur flex flex-col min-h-0">
         {/* Header */}
-        <div className="px-4 py-3 border-b flex items-center gap-3">
+  <div className="px-4 h-12 border-b flex items-center gap-3">
           <img src={current.avatar} alt="avatar" className="size-8 rounded-full" />
           <div className="flex-1">
             <div className="text-sm font-semibold leading-none">{current.name} · Chat Studio</div>
             <div className="text-xs text-neutral-500"></div>
           </div>
-          <Button variant="ghost" size="icon">
-            <Settings2 className="size-5" />
+          <Button variant="outline" size="sm" onClick={() => { setAskProfile(true); setProfileRefresh((v) => v + 1); }}>
+            프로필 선택
           </Button>
         </div>
 
@@ -412,18 +465,7 @@ export default function Chat() {
               <Switch id="keep-style" checked={usePrevAsStyle} onCheckedChange={setUsePrevAsStyle} disabled={!currentPreview} />
               <Label htmlFor="keep-style" className="text-xs">이전 옷 적용</Label>
             </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-xs">비율</Label>
-              <Select value={ratio} onValueChange={setRatio}>
-                <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1:1">1:1</SelectItem>
-                  <SelectItem value="3:4">3:4</SelectItem>
-                  <SelectItem value="4:5">4:5</SelectItem>
-                  <SelectItem value="9:16">9:16</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* 비율 선택 제거 요청에 따라 UI 숨김 */}
             <Button className="ml-auto gap-2" onClick={generate} disabled={isGenerating}>
               {isGenerating ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
               {isGenerating ? "생성 중" : "이미지 생성"}
@@ -431,28 +473,27 @@ export default function Chat() {
           </div>
 
           <Label htmlFor="prompt" className="text-xs text-neutral-500">프롬프트</Label>
-          <Textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="예) 패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈" className="min-h-[80px]" />
+          <Textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="예) 패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈" className="min-h-20" />
         </div>
       </main>
 
       {/* Right column */}
-      <aside className="col-span-12 xl:col-span-4 rounded-xl border bg-white/70 overflow-y-auto min-h-0">
-        <div className="p-3 border-b">
+      <aside className="col-span-12 xl:col-span-4 rounded-xl border bg-white/70 overflow-y-auto min-h-0 flex flex-col">
+        <div className="px-4 h-12 border-b flex items-center">
           <div className="flex items-center gap-2 font-semibold"><MessageSquare className="size-4" /> 게시 도우미</div>
-          <CardDescription>이미지 생성은 연결 전 단계입니다.</CardDescription>
         </div>
 
-        <div className="p-3 space-y-3">
+        <div className="px-4 py-3 flex-1 min-h-0">
           {/* Preview card */}
-          <Card className="overflow-hidden">
+          <Card className="overflow-hidden h-full flex flex-col">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2"><ImageIcon className="size-4" /> 프리뷰</CardTitle>
               <CardDescription>{currentPreview ? "선택된 프리뷰를 확인하세요" : "채팅의 이미지를 이 영역으로 드래그하여 보관하세요"}</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 min-h-0 flex flex-col">
               <div
                 className={`relative w-full rounded-2xl border-2 ${isDragOver ? "border-sky-500 ring-2 ring-sky-300" : "border-dashed border-neutral-200"}`}
-                style={{ aspectRatio: "4/5", overflow: "hidden" }}
+                style={{ aspectRatio: "4/5", overflow: "hidden", height: "min(66vh, calc(100% - 120px))" }}
                 ref={previewDropRef}
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -474,7 +515,7 @@ export default function Chat() {
                 ) : (
                   <div className="absolute inset-0 rounded-2xl flex items-center justify-center text-xs text-neutral-600">
                     {/* 배경 그라디언트 & 장식 블롭 */}
-                    <div className="absolute inset-0 bg-gradient-to-br from-white via-slate-50 to-violet-50" />
+                    <div className="absolute inset-0 bg-linear-to-br from-white via-slate-50 to-violet-50" />
                     <div className="pointer-events-none absolute -top-10 -left-10 h-48 w-48 rounded-full bg-rose-200/30 blur-3xl" />
                     <div className="pointer-events-none absolute -bottom-12 -right-10 h-56 w-56 rounded-full bg-sky-200/30 blur-3xl" />
 
@@ -502,35 +543,45 @@ export default function Chat() {
                   </div>
                 )}
 
-                {/* Controls overlay */}
+                {/* Controls overlay - prettier glass buttons */}
                 {previewImages.length > 0 && (
-                  <div className="absolute inset-x-0 top-0 p-2 flex items-center justify-between">
+                  <>
                     <button
                       aria-label="이전"
-                      className="h-8 w-8 rounded-full bg-white/80 text-neutral-700 shadow border hover:bg-white disabled:opacity-50"
+                      className="absolute left-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm text-neutral-700 shadow border hover:bg-white disabled:opacity-30"
                       disabled={previewImages.length <= 1}
                       onClick={(e) => {
                         e.preventDefault();
                         setPreviewIndex((i) => (i - 1 + previewImages.length) % previewImages.length);
                       }}
                     >
-                      ‹
+                      <ChevronLeft className="size-5" />
+                    </button>
+                    <button
+                      aria-label="다음"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/80 backdrop-blur-sm text-neutral-700 shadow border hover:bg-white disabled:opacity-30"
+                      disabled={previewImages.length <= 1}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setPreviewIndex((i) => (i + 1) % previewImages.length);
+                      }}
+                    >
+                      <ChevronRight className="size-5" />
                     </button>
                     <button
                       aria-label="제거"
-                      className="h-8 w-8 rounded-full bg-white/90 text-red-600 shadow border hover:bg-white"
+                      className="absolute top-2 right-2 h-8 w-8 rounded-full bg-white/90 text-neutral-700 shadow border hover:bg-white"
                       onClick={(e) => {
                         e.preventDefault();
                         removeCurrentPreview();
                       }}
                     >
-                      ×
+                      <X className="size-4" />
                     </button>
-                  </div>
+                  </>
                 )}
                 {previewImages.length > 1 && (
-                  <div className="absolute inset-x-0 bottom-0 p-2 flex items-center justify-between">
-                    <div className="flex-1" />
+                  <div className="absolute inset-x-0 bottom-2 flex items-center justify-center">
                     <div className="flex items-center gap-1 bg-white/70 px-2 py-1 rounded-full shadow">
                       {previewImages.map((_, idx) => (
                         <button
@@ -544,70 +595,39 @@ export default function Chat() {
                         />
                       ))}
                     </div>
-                    <button
-                      aria-label="다음"
-                      className="h-8 w-8 rounded-full bg-white/80 text-neutral-700 shadow border hover:bg-white disabled:opacity-50"
-                      disabled={previewImages.length <= 1}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setPreviewIndex((i) => (i + 1) % previewImages.length);
-                      }}
-                    >
-                      ›
-                    </button>
                   </div>
                 )}
               </div>
-            </CardContent>
-            <CardFooter className="justify-between">
-              <Button variant="outline" size="sm" className="gap-2" disabled={!currentPreview} onClick={async () => {
-                if (!currentPreview) return;
-                try { await navigator.clipboard.writeText(currentPreview); alert("이미지 DataURI를 복사했습니다"); } catch { alert("복사 실패"); }
-              }}>링크 복사</Button>
-              <Button variant="outline" size="sm" className="gap-2" disabled={!currentPreview} onClick={() => {
-                if (!currentPreview) return;
-                try { const a = document.createElement("a"); a.href = currentPreview; a.download = "selfstar-image.png"; a.click(); } catch { /* noop */ }
-              }}>다운로드</Button>
-            </CardFooter>
-          </Card>
-
-          {/* Caption */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2"><Hash className="size-4" /> 인스타 캡션</CardTitle>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-neutral-500">톤</span>
-                <Select value={vibe} onValueChange={setVibe}>
-                  <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="insta">Instagram(300자)</SelectItem>
-                    <SelectItem value="editorial">에디토리얼</SelectItem>
-                    <SelectItem value="playful">발랄/이모지</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Textarea value={mockCaption(prompt, vibe)} readOnly className="min-h-[96px]" />
-              <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => copy(mockCaption(prompt, vibe))}>캡션 복사</Button>
+              {/* Instagram caption inside preview card */}
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-xs text-neutral-600">인스타 캡션</Label>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <span className="text-neutral-500">톤</span>
+                    <Select value={vibe} onValueChange={setVibe}>
+                      <SelectTrigger className="h-7 w-36"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="insta">Instagram</SelectItem>
+                        <SelectItem value="editorial">에디토리얼</SelectItem>
+                        <SelectItem value="playful">발랄/이모지</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" variant="secondary" onClick={() => copy(mockCaption(prompt, vibe))}>복사</Button>
+                  </div>
+                </div>
+                <Textarea value={mockCaption(prompt, vibe)} readOnly className="min-h-[72px]" />
               </div>
             </CardContent>
-          </Card>
-
-          {/* Hashtags */}
-          <Card>
-            <CardHeader className="pb-1">
-              <CardTitle className="text-base">추천 해시태그</CardTitle>
-              <CardDescription>프롬프트 기반 키워드</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-              {mockHashtags(prompt).map((tag) => (
-                <Badge key={tag} variant="secondary" className="cursor-pointer" onClick={() => copy(tag)}>{tag}</Badge>
-              ))}
-            </CardContent>
-            <CardFooter className="justify-end">
-              <Button size="sm" variant="outline" onClick={() => copy(mockHashtags(prompt).join(" "))}>모두 복사</Button>
+            <CardFooter className="justify-center">
+              <Button
+                size="sm"
+                className="gap-2"
+                disabled={!currentPreview}
+                onClick={uploadToInstagram}
+                title={!currentPreview ? "프리뷰 없음" : "데이터 URI도 자동으로 공개 URL로 변환하여 업로드합니다"}
+              >
+                인스타 업로드
+              </Button>
             </CardFooter>
           </Card>
         </div>
