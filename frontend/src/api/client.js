@@ -4,6 +4,7 @@ export const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env)
   ? (import.meta.env.VITE_API_BASE ?? '')
   : '';
 
+// GET /health: 백엔드 상태 점검 API
 export async function getHealth() {
   const res = await fetch(`${API_BASE}/health`);
   if (!res.ok) {

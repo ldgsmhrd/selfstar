@@ -1,0 +1,46 @@
+# Global ignores for repo
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
+*.log
+
+# Python venvs
+.venv/
+venv/
+
+# Jupyter output
+*.ipynb_checkpoints/
+
+# Docker/compose artifacts
+*.pid
+
+# Env files (keep examples)
+.env
+.env.*
+!important.env.example
+!important.*.env.example
+!/env/*.env.example
+
+# Env directory: ignore secrets and local variants
+/env/*.dev
+/env/*.prod
+/env/*.prod.*
+/env/*.local
+/env/*.secret
+/env/*.bak*
+
+# Build outputs
+/frontend/dist/
+/frontend/.dist/
+/ai/mlruns/
+/ai/data/
+!/ai/data/samples/
+!/ai/data/samples/**/*

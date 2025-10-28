@@ -3,15 +3,16 @@ import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from app.core.s3 import s3_enabled, put_data_uri, presign_get_url
 
-# 파트: 파일/URL 유틸리티 — 공개 URL 보장
+# 파트: 파일/URL 유틸리티 — 공개 URL 보장(S3 우선)
 router = APIRouter(prefix="/files", tags=["files"]) 
 
 
 class EnsurePublicBody(BaseModel):
     # image: http(s) URL | /files/상대경로 | data:image/*;base64,...
     image: str
-    persona_num: Optional[int] = None  # optional, for auditing
+    persona_num: Optional[int] = None  # 선택: 키 경로 구성에 사용(chat/{user_id}/{persona_num})
 
 
 @router.post("/ensure_public")
@@ -19,46 +20,53 @@ async def ensure_public(request: Request, body: EnsurePublicBody):
     """공개 URL 보장 엔드포인트
 
     - http(s) URL: 그대로 반환(pass-through)
-    - /files/...: BACKEND_URL 기반 절대 URL로 승격
-    - data:image/*;base64,...: 파일 저장(FILES_ROOT/yyyyMMdd/uuid.ext) 후 절대 URL 반환
+    - /files/...: BACKEND_URL 기반 절대 URL로 승격(이전 호환)
+    - data:image/*;base64,...: S3에 업로드 후 프리사인 URL 반환
 
-    참고: Instagram Graph API 사용 시 BACKEND_URL은 외부에서 접근 가능한 HTTPS여야 함(ngrok 등).
+    참고: 버킷은 비공개여도 됩니다. 프리사인 URL을 게시/업로드에 사용하세요.
     """
     img = (body.image or "").strip()
     if not img:
         raise HTTPException(status_code=400, detail="image_required")
 
-    # Already a full URL
+    # 이미 절대 URL인 경우는 그대로 사용
     if img.lower().startswith("http://") or img.lower().startswith("https://"):
         return {"ok": True, "url": img}
 
     backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
 
-    # Relative served file
+    # 과거 /files 경로 호환: 절대 URL로만 승격
     if img.startswith("/files/"):
         return {"ok": True, "url": f"{backend_url}{img}", "path": img.removeprefix("/files/")}
 
-    # data URI -> persist
+    # data URI → S3 업로드
     if img.startswith("data:"):
-        import base64, uuid, datetime, re
-        files_root = os.getenv("FILES_ROOT") or os.path.join(os.path.dirname(__file__), "..", "..", "storage")
-        m = re.match(r"^data([\w\/:;+\-=]*);base64,", img)
-        mime = (m.group(1).split(":",1)[1] if m and ":" in m.group(1) else "image/png") if m else "image/png"
-        ext = {
-            "image/png": "png",
-            "image/jpeg": "jpg",
-            "image/jpg": "jpg",
-            "image/webp": "webp",
-        }.get(mime, "png")
-        date_dir = datetime.datetime.utcnow().strftime("%Y%m%d")
-        abs_dir = os.path.abspath(os.path.join(files_root, date_dir))
-        os.makedirs(abs_dir, exist_ok=True)
-        fname = f"{uuid.uuid4().hex[:12]}.{ext}"
-        abs_path = os.path.join(abs_dir, fname)
-        rel_path = f"{date_dir}/{fname}"
-        b64 = img.split(",", 1)[1]
-        with open(abs_path, "wb") as f:
-            f.write(base64.b64decode(b64))
-        return {"ok": True, "url": f"{backend_url}/files/{rel_path}", "path": rel_path}
+        if not s3_enabled():
+            raise HTTPException(status_code=400, detail="s3_not_configured")
+        user_id = request.session.get("user_id") if hasattr(request, "session") else None
+        if not user_id and os.getenv("DEV_ALLOW_DEBUG_USER", "0") in ("1", "true", "yes"):
+            try:
+                debug_uid = request.headers.get("X-Debug-User-Id")
+                if debug_uid and debug_uid.isdigit():
+                    user_id = int(debug_uid)
+            except Exception:
+                pass
+        if not user_id:
+            raise HTTPException(status_code=401, detail="not_authenticated")
+
+        # 경로: chat/{user_id}/{persona_num} 또는 uploads/{user_id}
+        key_prefix = (
+            f"chat/{int(user_id)}/{int(body.persona_num)}" if body.persona_num is not None else f"uploads/{int(user_id)}"
+        )
+        key = put_data_uri(
+            img,
+            model=None,
+            key_prefix=key_prefix,
+            base_prefix="",
+            include_model=False,
+            include_date=False,
+        )
+        url = presign_get_url(key)
+        return {"ok": True, "url": url, "key": key}
 
     raise HTTPException(status_code=400, detail="unsupported_image_format")

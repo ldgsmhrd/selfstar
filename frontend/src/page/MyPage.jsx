@@ -20,6 +20,10 @@ export default function MyPage() {
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [integrationsOpen, setIntegrationsOpen] = useState(false);
   const [loadingPersona, setLoadingPersona] = useState(false);
+  // Gallery state (chat-generated images)
+  const [gallery, setGallery] = useState([]); // [{id, key, url, created_at}]
+  const [galleryLoading, setGalleryLoading] = useState(false);
+  const [galleryError, setGalleryError] = useState(null);
   // Instagram linking state
   const [igAccounts, setIgAccounts] = useState(null);
   const [igAccountsPersonaNum, setIgAccountsPersonaNum] = useState(null); // which persona these accounts belong to
@@ -86,6 +90,9 @@ export default function MyPage() {
     setIgAccounts(null);
     setIgAccountsPersonaNum(null);
     setIgError(null);
+    // Clear gallery to force reload
+    setGallery([]);
+    setGalleryError(null);
   };
 
   // After Instagram OAuth returns (?ig=connected), auto-open integrations modal and clean URL
@@ -203,6 +210,28 @@ export default function MyPage() {
     []
   );
 
+  // Load chat images gallery when Photos tab is active or persona changes
+  useEffect(() => {
+    const load = async () => {
+      if (tab !== "photos") return;
+      if (!activePersona?.num) return;
+      setGalleryLoading(true);
+      setGalleryError(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/gallery?persona_num=${activePersona.num}`, { credentials: "include" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        setGallery(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        setGallery([]);
+        setGalleryError(e?.message || String(e));
+      } finally {
+        setGalleryLoading(false);
+      }
+    };
+    load();
+  }, [tab, activePersona?.num]);
+
   return (
     <main className="w-full min-h-screen bg-[#eaf5ff]">
       <div className="mx-auto max-w-6xl px-6 py-7">
@@ -275,7 +304,53 @@ export default function MyPage() {
               <Link to="/dashboard" className="btn light">대시보드</Link>
             </div>
 
-            {(tab === "photos" || tab === "drafts" || tab === "scheduled") && (
+            {tab === "photos" && (
+              <Card>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="text-sm text-slate-500">갤러리 {Array.isArray(gallery) ? gallery.length : 0}장</div>
+                  <button className="btn light" onClick={() => {
+                    // manual refresh
+                    setTab("photos");
+                    // trigger effect
+                    setGalleryLoading(true);
+                    (async () => {
+                      try {
+                        const res = await fetch(`${API_BASE}/api/chat/gallery?persona_num=${activePersona?.num || ''}`, { credentials: "include" });
+                        if (res.ok) {
+                          const data = await res.json();
+                          setGallery(Array.isArray(data?.items) ? data.items : []);
+                        }
+                      } finally { setGalleryLoading(false); }
+                    })();
+                  }}>새로고침</button>
+                </div>
+                {galleryLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
+                {galleryError && <div className="text-sm text-red-600">갤러리를 불러오지 못했습니다: {galleryError}</div>}
+                {!galleryLoading && !galleryError && Array.isArray(gallery) && gallery.length === 0 && (
+                  <Empty title="아직 생성된 이미지가 없어요" action="새로 만들기" />
+                )}
+                {!galleryLoading && !galleryError && Array.isArray(gallery) && gallery.length > 0 && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                    {gallery.map((g) => (
+                      <div key={g.id || g.key} className="relative rounded-xl overflow-hidden border border-slate-200 bg-white/60">
+                        {g.url ? (
+                          <img src={g.url} alt="" className="w-full h-36 object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-36 bg-slate-100" />
+                        )}
+                        {g.created_at && (
+                          <div className="absolute bottom-0 left-0 right-0 text-[10px] text-white/90 bg-black/30 px-2 py-1">
+                            {new Date(g.created_at).toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            )}
+
+            {(tab === "drafts" || tab === "scheduled") && (
               <Card>
                 <Empty title="아직 콘텐츠가 없어요" action="새로 만들기" />
               </Card>

@@ -45,7 +45,8 @@ function useAuth() {
     const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
       setLoading(true);
-  const res = await fetch(`${API_BASE}/auth/me`, {
+      // GET /auth/me: 현재 로그인 사용자 정보 조회 (세션 포함)
+      const res = await fetch(`${API_BASE}/auth/me`, {
         method: "GET",
         credentials: "include",
         headers: { Accept: "application/json" },
@@ -68,6 +69,7 @@ function useAuth() {
 
   const logout = useCallback(async () => {
     try {
+      // POST /auth/logout: 로그아웃 (세션 무효화)
       const res = await fetch(`${API_BASE}/auth/logout`, { method: "POST", credentials: "include" });
       if (res.ok || res.status === 204) { setUser(null); setError(null); }
       else { setError(`로그아웃 실패: HTTP ${res.status}`); }
@@ -232,6 +234,16 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileSelectRefreshTick, setProfileSelectRefreshTick] = useState(0);
 
+  // 프로필 선택 모달 닫기 동작: /chat 경로에서 닫히면 홈으로 이동
+  const closeProfileModal = useCallback(() => {
+    setShowProfileModal(false);
+    try {
+      if (location.pathname === "/chat") {
+        navigate("/");
+      }
+    } catch {}
+  }, [location.pathname, navigate]);
+
   // 외부에서(예: Chat) 이미지 생성 모달을 열라는 신호
   useEffect(() => {
     const onOpenImgcreate = () => {
@@ -288,6 +300,15 @@ export default function App() {
     window.addEventListener("open-profile-select", onOpenProfile);
     return () => window.removeEventListener("open-profile-select", onOpenProfile);
   }, []);
+
+  // 새로고침으로 /chat 직접 진입 시, 이벤트 타이밍과 무관하게 즉시 프로필 선택 모달 오픈
+  useEffect(() => {
+    if (!isEmbed && location.pathname === "/chat") {
+      setProfileSelectRefreshTick((v) => v + 1);
+      setShowProfileModal(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, isEmbed]);
 
   // Chat은 /chat 진입 전 게이트 모달을 통해 진입
 
@@ -418,7 +439,7 @@ export default function App() {
           role="dialog"
           aria-modal="true"
           className="fixed inset-0 z-1050 flex items-center justify-center bg-[rgba(15,23,42,0.45)] p-4"
-          onClick={() => setShowProfileModal(false)}
+          onClick={closeProfileModal}
         >
           <div
             className="relative w-[min(1200px,96vw)] max-h-[90dvh] rounded-2xl border border-blue-200 bg-white p-4 shadow-[0_30px_70px_rgba(2,6,23,.35)] mx-auto my-auto"
@@ -426,30 +447,56 @@ export default function App() {
           >
             <button
               aria-label="닫기"
-              onClick={() => setShowProfileModal(false)}
+              onClick={closeProfileModal}
               className="absolute top-2.5 right-3 w-9 h-9 rounded-full border bg-white shadow"
             >
               ×
             </button>
-            {/* ProfileSelect: 선택 시 persona-chosen 이벤트를 전파하고 필요시 채팅으로 이동 */}
-            <ProfileSelect
-              maxSlots={4}
-              refreshKey={profileSelectRefreshTick}
-              onAddProfileClick={() => {
-                setShowProfileModal(false);
-                // 이미지 생성 모달 열기
-                setShowImgcreateModal(true);
-              }}
-              onProfileChosen={(p) => {
-                try { if (p?.num) localStorage.setItem("activePersonaNum", String(p.num)); } catch {}
-                try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
-                setShowProfileModal(false);
-                // 채팅으로 이동하거나, 이미 채팅이면 그대로 유지(채팅은 이벤트를 받아 새로고침)
-                if (location.pathname !== "/chat") {
-                  navigate("/chat");
-                }
-              }}
-            />
+            {/* 로그인 상태에 따라 모달 내용을 분기 */}
+            {user ? (
+              // ProfileSelect: 선택 시 persona-chosen 이벤트를 전파하고 필요시 채팅으로 이동
+              <ProfileSelect
+                maxSlots={4}
+                refreshKey={profileSelectRefreshTick}
+                onAddProfileClick={() => {
+                  setShowProfileModal(false);
+                  // 이미지 생성 모달 열기
+                  setShowImgcreateModal(true);
+                }}
+                onProfileChosen={(p) => {
+                  try { if (p?.num) localStorage.setItem("activePersonaNum", String(p.num)); } catch {}
+                  try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
+                  setShowProfileModal(false);
+                  // 채팅으로 이동하거나, 이미 채팅이면 그대로 유지(채팅은 이벤트를 받아 새로고침)
+                  if (location.pathname !== "/chat") {
+                    navigate("/chat");
+                  }
+                }}
+              />
+            ) : (
+              // 비로그인: 로그인 유도 뷰 표시
+              <div className="px-3 py-4 flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 grid place-items-center text-2xl font-black mb-3">🔐</div>
+                <h2 className="text-xl font-extrabold tracking-tight mb-1">로그인이 필요합니다</h2>
+                <p className="text-slate-600 text-sm mb-4">채팅을 시작하려면 먼저 로그인해주세요. 로그인 후 프로필을 선택하거나 새로 만들 수 있어요.</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="h-10 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold"
+                    onClick={() => setShowProfileModal(false)}
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="button"
+                    className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold shadow"
+                    onClick={() => { setShowProfileModal(false); navigate("/signup"); }}
+                  >
+                    로그인 바로가기
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
