@@ -312,17 +312,21 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 # 테이블이 없을 수 있으므로 보장(최신 스키마 기준)
-                await cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS ss_chat_img (
-                      img_id INT AUTO_INCREMENT PRIMARY KEY,
-                      user_id INT NOT NULL,
-                      persona_id INT NOT NULL,
-                      img_key VARCHAR(500) NOT NULL,
-                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                    """
-                )
+                # 운영 환경에서 CREATE 권한이 없을 수 있어도 무시하고 조회만 시도합니다.
+                try:
+                    await cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS ss_chat_img (
+                          img_id INT AUTO_INCREMENT PRIMARY KEY,
+                          user_id INT NOT NULL,
+                          persona_id INT NOT NULL,
+                          img_key VARCHAR(500) NOT NULL,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                        """
+                    )
+                except Exception as _cte:
+                    log.warning("CREATE TABLE ignored: %s", _cte)
                 rows = []
                 # 1차: 최신 컬럼(img_id, img_key)
                 try:
@@ -387,12 +391,21 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                         url = presign_get_url(key)
                 except Exception:
                     url = key
+            # created_at이 문자열로 반환되는 운영 DB 대비
+            ca = r.get("created_at")
+            if ca:
+                try:
+                    created_at = ca.isoformat() if hasattr(ca, "isoformat") else str(ca)
+                except Exception:
+                    created_at = None
+            else:
+                created_at = None
             items.append({
                 "id": r.get("img_id"),
                 "persona_id": r.get("persona_id"),
                 "key": key,
                 "url": url,
-                "created_at": r.get("created_at").isoformat() if r.get("created_at") else None,
+                "created_at": created_at,
             })
         return {"ok": True, "items": items}
     except Exception as e:

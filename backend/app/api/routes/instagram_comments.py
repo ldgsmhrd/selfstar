@@ -124,7 +124,18 @@ async def list_posts(request: Request, persona_num: Optional[int] = None, limit:
                 },
             )
         if r.status_code != 200:
-            # surface as HTTP error to UI
+            # 토큰 만료(code=190) → 재인증 유도(401)
+            try:
+                body = r.json()
+                err = (body or {}).get("error") or {}
+                if err.get("code") == 190:
+                    raise HTTPException(status_code=401, detail="persona_oauth_required")
+            except Exception:
+                pass
+            # 미디어가 없거나 접근 제한으로 404인 경우는 빈 배열로 처리하여 UI 경고 방지
+            if r.status_code == 404:
+                return {"ok": True, "items": []}
+            # 그 외는 그대로 전달
             raise HTTPException(status_code=r.status_code, detail=r.text)
         data = (r.json() or {}).get("data") or []
         for m in data:
