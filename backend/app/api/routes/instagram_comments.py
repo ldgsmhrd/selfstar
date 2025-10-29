@@ -209,11 +209,28 @@ async def comments_overview(
             params = p.get("persona_parameters") or {}
             disp_name = params.get("name") or f"프로필 {num}"
             persona_img = p.get("persona_img")
-            # Normalize persona_img for browser use: presign S3 keys
+            # Normalize persona_img for browser use: presign S3 keys and fix legacy localhost URLs
             try:
-                if persona_img and not str(persona_img).lower().startswith("http") and not str(persona_img).startswith("data:") and not str(persona_img).startswith("/"):
+                s = str(persona_img) if persona_img is not None else ""
+                if s and not s.lower().startswith("http") and not s.startswith("data:") and not s.startswith("/"):
                     if s3_enabled():
-                        persona_img = presign_get_url(str(persona_img))
+                        persona_img = presign_get_url(s)
+                elif s.lower().startswith("http://localhost") or s.lower().startswith("http://127.0.0.1"):
+                    from urllib.parse import urlparse
+                    purl = urlparse(s)
+                    path = purl.path or ""
+                    if path.startswith("/personas/") or path.startswith("/uploads/"):
+                        if s3_enabled():
+                            persona_img = presign_get_url(path.lstrip("/"))
+                        else:
+                            backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
+                            persona_img = f"{backend_url}{path}"
+                    elif path.startswith("/media/"):
+                        backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
+                        persona_img = f"{backend_url}{path}"
+                    else:
+                        backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
+                        persona_img = f"{backend_url}{path or '/'}"
             except Exception:
                 pass
 

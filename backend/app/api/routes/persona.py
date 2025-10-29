@@ -33,6 +33,27 @@ async def list_my_personas(request: Request):
                     except Exception:
                         # 실패 시 원본 키 그대로 반환
                         img_out = raw_img
+            # 과거 로컬 절대 URL(http://localhost, http://127.0.0.1) 보정
+            elif raw_img.lower().startswith("http://localhost") or raw_img.lower().startswith("http://127.0.0.1"):
+                try:
+                    from urllib.parse import urlparse
+                    p = urlparse(raw_img)
+                    path = p.path or ""
+                    if path.startswith("/personas/") or path.startswith("/uploads/"):
+                        # personas/uploads 경로는 S3 키로 간주하여 프리사인
+                        if s3_enabled():
+                            img_out = presign_get_url(path.lstrip("/"))
+                        else:
+                            backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
+                            img_out = f"{backend_url}{path}"
+                    elif path.startswith("/media/"):
+                        backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
+                        img_out = f"{backend_url}{path}"
+                    else:
+                        backend_url = (os.getenv("BACKEND_URL") or "http://localhost:8000").rstrip("/")
+                        img_out = f"{backend_url}{path or '/'}"
+                except Exception:
+                    img_out = raw_img
             items.append({
                 "num": r.get("user_persona_num"),
                 "img": img_out,
