@@ -11,7 +11,13 @@ export default defineConfig({
   plugins: [react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   server: {
+    // Allow being accessed behind a reverse proxy (nginx) via domain host headers
+    host: true,
     port: 5174,
+  // Fix: Vite dev server blocks non-local hosts by default.
+  // In production we proxy through nginx with Host: selfstar.duckdns.org,
+  // so explicitly allow all hosts (or replace with an array if you want to restrict).
+  allowedHosts: 'all',
     proxy: {
       // In Docker, the backend is reachable via its service name on the default network
   '/auth': { target: 'http://backend:8000', changeOrigin: true, secure: false },
