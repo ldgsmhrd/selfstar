@@ -227,7 +227,7 @@ async def image(req: ChatImageRequest, request: Request):
                 pool = await get_mysql_pool()
                 async with pool.acquire() as conn:
                     async with conn.cursor() as cur:
-                        # 테이블 보장(없으면 생성)
+                        # 테이블 보장(없으면 생성) — 최신 스키마
                         await cur.execute(
                             """
                             CREATE TABLE IF NOT EXISTS ss_chat_img (
@@ -239,20 +239,41 @@ async def image(req: ChatImageRequest, request: Request):
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                             """
                         )
-                        await cur.execute(
-                            """
-                            INSERT INTO ss_chat_img (user_id, persona_id, img_key)
-                            VALUES (%s, %s, %s)
-                            """,
-                            (int(user_id), int(persona_db_id), key),
-                        )
-                        await conn.commit()
+                        inserted = False
+                        # 1차 시도: 최신 컬럼(img_key)
                         try:
-                            chat_id = cur.lastrowid
-                        except Exception:
-                            chat_id = None
+                            await cur.execute(
+                                """
+                                INSERT INTO ss_chat_img (user_id, persona_id, img_key)
+                                VALUES (%s, %s, %s)
+                                """,
+                                (int(user_id), int(persona_db_id), key),
+                            )
+                            inserted = True
+                        except Exception as _ie:
+                            # 2차 시도: 구 스키마(persona_chat_img)
+                            try:
+                                await cur.execute(
+                                    """
+                                    INSERT INTO ss_chat_img (user_id, persona_id, persona_chat_img)
+                                    VALUES (%s, %s, %s)
+                                    """,
+                                    (int(user_id), int(persona_db_id), key),
+                                )
+                                inserted = True
+                            except Exception as _ie2:
+                                log.warning("ss_chat_img insert failed (both schemas): %s / %s", _ie, _ie2)
+                        if inserted:
+                            try:
+                                await conn.commit()
+                            except Exception:
+                                pass
+                            try:
+                                chat_id = cur.lastrowid
+                            except Exception:
+                                chat_id = None
             except Exception as _e:
-                log.warning("ss_chat_img insert failed: %s", _e)
+                log.warning("ss_chat_img insert outer failed: %s", _e)
                 chat_id = None
 
             stored = {"key": key, "url": url, "id": chat_id}
@@ -290,7 +311,7 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
         pool = await get_mysql_pool()
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                # 테이블이 없을 수 있으므로 보장
+                # 테이블이 없을 수 있으므로 보장(최신 스키마 기준)
                 await cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS ss_chat_img (
@@ -302,29 +323,61 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                     """
                 )
-                if persona_db_id is None:
-                    await cur.execute(
-                        """
-                        SELECT img_id, user_id, persona_id, img_key, created_at
-                        FROM ss_chat_img
-                        WHERE user_id=%s
-                        ORDER BY img_id DESC
-                        LIMIT %s OFFSET %s
-                        """,
-                        (int(user_id), int(limit), int(offset)),
-                    )
-                else:
-                    await cur.execute(
-                        """
-                        SELECT img_id, user_id, persona_id, img_key, created_at
-                        FROM ss_chat_img
-                        WHERE user_id=%s AND persona_id=%s
-                        ORDER BY img_id DESC
-                        LIMIT %s OFFSET %s
-                        """,
-                        (int(user_id), int(persona_db_id), int(limit), int(offset)),
-                    )
-                rows = await cur.fetchall() or []
+                rows = []
+                # 1차: 최신 컬럼(img_id, img_key)
+                try:
+                    if persona_db_id is None:
+                        await cur.execute(
+                            """
+                            SELECT img_id, user_id, persona_id, img_key, created_at
+                            FROM ss_chat_img
+                            WHERE user_id=%s
+                            ORDER BY img_id DESC
+                            LIMIT %s OFFSET %s
+                            """,
+                            (int(user_id), int(limit), int(offset)),
+                        )
+                    else:
+                        await cur.execute(
+                            """
+                            SELECT img_id, user_id, persona_id, img_key, created_at
+                            FROM ss_chat_img
+                            WHERE user_id=%s AND persona_id=%s
+                            ORDER BY img_id DESC
+                            LIMIT %s OFFSET %s
+                            """,
+                            (int(user_id), int(persona_db_id), int(limit), int(offset)),
+                        )
+                    rows = await cur.fetchall() or []
+                except Exception as _se:
+                    # 2차: 구 스키마(chat_img_id, persona_chat_img)
+                    try:
+                        if persona_db_id is None:
+                            await cur.execute(
+                                """
+                                SELECT chat_img_id AS img_id, user_id, persona_id, persona_chat_img AS img_key, created_at
+                                FROM ss_chat_img
+                                WHERE user_id=%s
+                                ORDER BY chat_img_id DESC
+                                LIMIT %s OFFSET %s
+                                """,
+                                (int(user_id), int(limit), int(offset)),
+                            )
+                        else:
+                            await cur.execute(
+                                """
+                                SELECT chat_img_id AS img_id, user_id, persona_id, persona_chat_img AS img_key, created_at
+                                FROM ss_chat_img
+                                WHERE user_id=%s AND persona_id=%s
+                                ORDER BY chat_img_id DESC
+                                LIMIT %s OFFSET %s
+                                """,
+                                (int(user_id), int(persona_db_id), int(limit), int(offset)),
+                            )
+                        rows = await cur.fetchall() or []
+                    except Exception as _se2:
+                        log.exception("failed to list gallery (both schemas): %s / %s", _se, _se2)
+                        raise
         for r in rows:
             key = r.get("img_key") or ""
             url = key
