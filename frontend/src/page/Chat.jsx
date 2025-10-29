@@ -14,15 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { API_BASE } from "@/api/client";
 
 // Helpers
-const mockCaption = (prompt, vibe) => {
-  const base = (prompt || "").trim() || "밤하늘 같은 런웨이, 조명 아래에서 빛나는 순간";
-  const styles = {
-    insta: `오늘의 런웨이 룩 ✨ ${base}. #OOTD #Runway #FashionWeek`,
-    editorial: `${base} — 시선을 사로잡는 라인과 결. 디테일이 만든 자신감.`,
-    playful: `${base}! 🖤🖤 오늘도 캣워크 기분으로 워킹중 #스웩 #데일리룩`,
-  };
-  return styles[vibe] || styles.insta;
-};
+// Temporary: return empty caption so the UI shows a blank space
+const mockCaption = (prompt, vibe) => "";
 
 const mockHashtags = (prompt) => {
   const words = (prompt || "패션쇼 블랙 드레스 런웨이 감도").split(/\s+/);

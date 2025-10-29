@@ -29,7 +29,8 @@ const idle = "text-slate-600 hover:bg-slate-100";
 // import googleImg from "../../img/google.png";
 import heroImg from "../../img/hero.png";
 import step2Img from "../../img/step2.png";
-import step3Img from "../../img/step3.png";
+// import step3Img from "../../img/step3.png"; // replaced by Step3Carousel
+import Step3Carousel from "@/components/Step3Carousel.jsx";
 
 // Backend API base comes from .env (VITE_API_BASE); empty string in dev uses Vite proxy
 
@@ -157,12 +158,6 @@ function WelcomeIntro({ user, onStart, onOpenGate, startHref = "/signup" }) {
       .intro-title .brand{ animation:none !important; }
     }
 
-  /* 인트로 내부 스크롤 힌트: 섹션 하단(원위치) */
-  .intro-scroll { padding-bottom: clamp(8px,2vh,16px); text-align:center; color:#94a3b8; font-size:12px; }
-    .intro-scroll .mouse { width:26px; height:42px; margin:8px auto 0; border:2px solid #c9ced6; border-radius:18px; display:flex; justify-content:center; }
-    .intro-scroll .wheel { width:4px; height:8px; margin-top:6px; border-radius:2px; background:#c9ced6; animation:wheel 1.8s ease-in-out infinite; }
-    @keyframes wheel { 0%{transform:translateY(0)} 50%{transform:translateY(12px)} 100%{transform:translateY(0)} }
-
     /* 작은 세로 화면에서 여백 축소 */
     @media (max-height: 720px){
       .intro-wrap{ gap:14px; }
@@ -196,11 +191,6 @@ function WelcomeIntro({ user, onStart, onOpenGate, startHref = "/signup" }) {
           <div className="intro-sub">{user ? "채팅을 시작해보세요." : "인물을 생성하여 활동해보세요."}</div>
           <a className="intro-start" href={startHref} onClick={handleClick}>{user ? "채팅 시작" : "시작하기"}</a>
         </div>
-        {/* 섹션 하단 안내 */}
-        <div className="intro-scroll" aria-hidden="true">
-          <div className="mouse"><div className="wheel" /></div>
-          <div className="intro-scroll-text">스크롤을 내려보세요.</div>
-        </div>
       </main>
     </>
   );
@@ -229,7 +219,8 @@ export default function App() {
   // Chat/Imgcreate 모달 상태
   const [showGate, setShowGate] = useState(false);
   const [showImgcreateModal, setShowImgcreateModal] = useState(false);
-  const [imgModalSize, setImgModalSize] = useState({ w: 1100, h: 760 });
+  // 모달 기본 크기(이전과 동일 체감): ProfileSelect와 유사한 1200px/90vh 규칙
+  const [imgModalSize, setImgModalSize] = useState({ w: 1200, h: 0 });
 
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [profileSelectRefreshTick, setProfileSelectRefreshTick] = useState(0);
@@ -253,19 +244,13 @@ export default function App() {
     return () => window.removeEventListener("open-imgcreate", onOpenImgcreate);
   }, []);
 
-  // Imgcreate(iframe)에서 넘어오는 콘텐츠 크기를 받아 모달 컨테이너 크기 자동 조절
+  // Imgcreate(iframe)에서 넘어오는 메시지 처리 (크기 메시지는 무시하여 고정 크기 유지)
   useEffect(() => {
     const onMsg = (e) => {
       const d = e?.data;
       if (!d || !d.type) return;
       if (d.type === "imgcreate-size") {
-        const vw = typeof window !== "undefined" ? window.innerWidth : 1920;
-        const vh = typeof window !== "undefined" ? window.innerHeight : 1080;
-        const maxW = Math.min(1200, Math.floor(vw * 0.96));
-        const maxH = Math.min(900, Math.floor(vh * 0.96));
-        const w = Math.min(maxW, Math.max(840, Number(d.width) || 1100));
-        const h = Math.min(maxH, Math.max(600, Number(d.height) || 760));
-        setImgModalSize({ w, h });
+        // 이전에는 크기 자동 조절을 했으나, 요청에 따라 고정 크기 유지
         return;
       }
       if (d.type === "persona-created") {
@@ -412,12 +397,25 @@ export default function App() {
           onClick={() => setShowImgcreateModal(false)}
         >
           <div
-            style={{ position: "relative", width: Math.min(imgModalSize.w, Math.floor(window.innerWidth * 0.96)), height: Math.min(imgModalSize.h, Math.floor(window.innerHeight * 0.96)), borderRadius: 18, overflow: "hidden", boxShadow: "0 30px 70px rgba(2,6,23,.35)", background: "#fff" }}
+            style={{
+              position: "relative",
+              // ProfileSelect와 동일한 체감 크기: min(1200px, 96vw) x max 90dvh
+              width: Math.min(1200, Math.floor((typeof window !== "undefined" ? window.innerWidth : 1920) * 0.96)),
+              height: Math.min(Math.floor((typeof window !== "undefined" ? window.innerHeight : 1080) * 0.90), Math.floor((typeof window !== "undefined" ? window.innerHeight : 1080) * 0.96)),
+              borderRadius: 18,
+              overflow: "hidden",
+              boxShadow: "0 30px 70px rgba(2,6,23,.35)",
+              background: "#fff",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               aria-label="닫기"
-              onClick={() => setShowImgcreateModal(false)}
+              onClick={() => {
+                // X 버튼 클릭 시 메인으로 이동하며 모달을 닫습니다.
+                setShowImgcreateModal(false);
+                try { navigate("/"); } catch {}
+              }}
               style={{ position: "absolute", top: 10, right: 12, width: 36, height: 36, borderRadius: 999, border: "1px solid #e2e8f0", background: "#fff", boxShadow: "0 4px 10px rgba(2,6,23,.08)", cursor: "pointer", fontSize: 18, fontWeight: 800, color: "#334155", zIndex: 2 }}
             >
               ×
@@ -431,7 +429,7 @@ export default function App() {
         </div>
       )}
 
-      {!isEmbed && <Footer />}
+  {!isEmbed && location.pathname !== "/chat" && <Footer />}
 
       {/* 전역 프로필 선택 모달: 어디서든 불러 사용할 수 있도록 App 레벨에서 제공 */}
       {!isEmbed && showProfileModal && (
@@ -603,7 +601,7 @@ function LandingSections() {
 
         <div className="grid md:grid-cols-2 gap-10 items-center">
           <Reveal from="left">
-            <img src={step3Img} alt="step3" className="w-full rounded-2xl shadow border" />
+            <Step3Carousel />
           </Reveal>
 
           <div className="space-y-4">

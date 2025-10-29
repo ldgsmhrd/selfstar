@@ -1,9 +1,7 @@
 // Imgcreate.jsx
 import { useState, useMemo, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import guideImg from "../../img/fixed_face.png";
 import { API_BASE } from "@/api/client";
-import TypingText from "../components/TypingText";
 import Field from "../components/Field";
 import StyleTag from "../components/StyleTag";
 
@@ -40,18 +38,68 @@ function Home({ compact = false }) {
   }, [isEmbed]);
   // 기본 필드
   const [name, setName] = useState("");
-  const [gender, setGender] = useState("여");
-  const [age, setAge] = useState(23);
+  const [gender, setGender] = useState(""); // 기본 없음
+  const [ageStr, setAgeStr] = useState(""); // 숫자 입력 원본 유지
 
   // 옵션(악세사리 등) — 현재 UI 미구현이므로 선택 값만 보유
   const [selected] = useState([]);
+
+  // 성별별 옵션 세트 (확장)
+  const faceShapesByGender = {
+    여: ["계란형", "둥근형", "하트형", "긴형", "각진형", "역삼각형", "오벌형"],
+    남: ["각진형", "둥근형", "계란형", "긴형", "역삼각형", "오벌형"],
+  };
+  const skinTonesByGender = {
+    여: ["밝은 17~21호", "중간 21~23호", "따뜻한 23~25호", "태닝톤", "쿨톤", "올리브톤", "피치톤"],
+    남: ["중간 21~23호", "태닝톤", "따뜻한 23~25호", "쿨톤", "올리브톤", "피치톤"],
+  };
+  const hairsByGender = {
+    여: [
+      "스트레이트", "웨이브", "단발", "장발", "포니테일", "업스타일",
+      "뱅헤어", "히피펌", "볼륨펌", "레이어드컷",
+    ],
+    남: [
+      "쇼트컷", "댄디컷", "포마드", "스파이크", "장발", "투블럭",
+      "리젠트컷", "크롭컷", "볼륨펌",
+    ],
+  };
+  const eyeShapesByGender = {
+    여: ["크고 또렷함", "고양이상", "강아지상", "아치형", "처진눈매", "쌍꺼풀", "아몬드형"],
+    남: ["크고 또렷함", "아치형", "처진눈매", "무쌍", "아몬드형"],
+  };
+  const nosesByGender = {
+    여: ["오똑함", "버튼", "긴코", "작은코", "직선", "둥근코"],
+    남: ["오똑함", "버튼", "긴코", "직선", "넓은코"],
+  };
+  const lipTypesByGender = {
+    여: ["도톰", "얇음", "하트", "자연", "그라데", "풀립"],
+    남: ["도톰", "얇음", "자연", "풀립"],
+  };
+  const bodyTypesByGender = {
+    여: ["마름", "슬림", "보통", "통통", "근육질", "스포츠형"],
+    남: ["슬림", "보통", "통통", "근육질", "스포츠형", "마름"],
+  };
+  const foreheadLengthsByGender = {
+    여: ["짧은 이마", "중간 이마", "긴 이마"],
+    남: ["짧은 이마", "중간 이마", "긴 이마"],
+  };
+  const eyebrowShapesByGender = {
+    여: ["일자", "아치형", "둥근형", "각진형", "얇은형"],
+    남: ["일자", "아치형", "각진형", "두꺼운형"],
+  };
 
   // 성격 chips
   const personalityList = useMemo(
     () => ["활발함", "차분함", "상냥함", "도도함", "유머러스", "카리스마", "지적인", "우아한"],
     []
   );
-  const [personalities, setPersonalities] = useState([]);
+  const [personalities, setPersonalities] = useState([]); // 기본 없음
+  // 특징(멀티-선택) chips
+  const featuresList = useMemo(
+    () => ["귀여움", "섹시함", "시크함", "청순함", "도도함", "우아함", "카리스마", "지적임"],
+    []
+  );
+  const [features, setFeatures] = useState([]);
 
   // 얼굴 디테일 6종
   const [faceShape, setFaceShape] = useState(""); // 얼굴형
@@ -60,17 +108,21 @@ function Home({ compact = false }) {
   const [eyes, setEyes] = useState("");           // 눈
   const [nose, setNose] = useState("");           // 코
   const [lips, setLips] = useState("");           // 입
+  const [foreheadLength, setForeheadLength] = useState(""); // 이마 길이
+  const [eyebrowShape, setEyebrowShape] = useState("");     // 눈썹 모양
 
   const [bodyType, setBodyType] = useState("");   // 체형
-  const [glasses, setGlasses] = useState("");     // 안경 유무
+  // 안경 항목 제거됨
 
-  const faceShapes = ["계란형", "둥근형", "각진형", "하트형", "긴형"];
-  const skinTones  = ["밝은 17~21호", "중간 21~23호", "따뜻한 23~25호", "태닝톤", "쿨톤"];
-  const hairs      = ["스트레이트", "웨이브", "단발", "장발", "포니테일", "업스타일"];
-  const eyeShapes  = ["크고 또렷함", "고양이상", "강아지상", "아치형", "처진눈매"];
-  const noses      = ["오똑함", "버튼", "긴코", "작은코", "직선"];
-  const lipTypes   = ["도톰", "얇음", "하트", "자연", "그라데"];
-  const bodyTypes  = ["마름", "슬림", "보통", "통통", "근육질"];
+  const faceShapes = faceShapesByGender[gender] || [];
+  const skinTones  = skinTonesByGender[gender] || [];
+  const hairs      = hairsByGender[gender] || [];
+  const foreheadLengths = foreheadLengthsByGender[gender] || [];
+  const eyebrowShapes  = eyebrowShapesByGender[gender] || [];
+  const eyeShapes  = eyeShapesByGender[gender] || [];
+  const noses      = nosesByGender[gender] || [];
+  const lipTypes   = lipTypesByGender[gender] || [];
+  const bodyTypes  = bodyTypesByGender[gender] || [];
 
   // 이미지 생성 상태
   const [generated, setGenerated] = useState(null);
@@ -82,8 +134,16 @@ function Home({ compact = false }) {
   const [status, setStatus] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // 확정 버튼 활성화 여부: 인플루언서 정보(이름/성별/나이/안경) + 얼굴 디테일(6종) 모두 선택 시에만 활성화
-  const isInfoReady = Boolean(String(name || "").trim()) && Boolean(gender) && Boolean(age) && Boolean(glasses);
+  // 나이 파싱 및 검증 (1~120), 입력 중엔 제한 없이 두고 블러/저장 시 보정
+  const ageNum = useMemo(() => {
+    const n = Number(ageStr);
+    if (!Number.isFinite(n)) return null;
+    const v = Math.floor(n);
+    return v >= 1 && v <= 120 ? v : null;
+  }, [ageStr]);
+  // 확정 버튼 활성화 여부: 인플루언서 정보(이름/성별/나이/성격) + 얼굴 디테일(6종) + 체형
+  // 인플루언서 정보 완료: 이름/성별/나이/성격(선택) 필요
+  const isInfoReady = Boolean(String(name || "").trim()) && Boolean(gender) && ageNum !== null && (Array.isArray(personalities) && personalities.length > 0);
   const isFaceReady = Boolean(faceShape) && Boolean(skinTone) && Boolean(hair) && Boolean(eyes) && Boolean(nose) && Boolean(lips);
   const isBodyReady = Boolean(bodyType) && (Array.isArray(personalities) && personalities.length > 0);
   const isConfirmReady = isInfoReady && isFaceReady && isBodyReady;
@@ -93,7 +153,7 @@ function Home({ compact = false }) {
     () => ({
       name,
       gender,
-      age,
+      age: ageNum,
       options: selected,
       faceShape,
       skinTone,
@@ -101,14 +161,16 @@ function Home({ compact = false }) {
       eyes,
       nose,
       lips,
+      foreheadLength,
+      eyebrowShape,
       bodyType,
-      glasses,
       personalities,
+      features,
     }),
     [
       name,
       gender,
-      age,
+      ageNum,
       selected,
       faceShape,
       skinTone,
@@ -116,9 +178,11 @@ function Home({ compact = false }) {
       eyes,
       nose,
       lips,
+      foreheadLength,
+      eyebrowShape,
       bodyType,
-      glasses,
       personalities,
+      features,
     ]
   );
 
@@ -202,7 +266,7 @@ function Home({ compact = false }) {
   };
 
   // 성별 변환 및 생년월일 계산 (나이 기준 단순 변환: 해당 연도의 1월 1일)
-  const mapGender = (g) => (g === "남" ? "남성" : "여성");
+  const mapGender = (g) => (g === "남" ? "남성" : g === "여" ? "여성" : null);
   const birthdayFromAge = (a) => {
     const n = Number(a);
     if (!Number.isFinite(n) || n <= 0 || n > 120) return null;
@@ -214,10 +278,14 @@ function Home({ compact = false }) {
   const doSaveProfile = async () => {
     if (saving) return;
     // 나이 -> 생년월일, 성별 매핑
-    const bday = birthdayFromAge(age);
+    const bday = birthdayFromAge(ageNum);
     const mappedGender = mapGender(gender);
     if (!bday) {
       setError("유효한 나이를 입력해주세요.");
+      return;
+    }
+    if (!mappedGender) {
+      setError("성별을 선택해주세요.");
       return;
     }
     setSaving(true);
@@ -328,8 +396,11 @@ function Home({ compact = false }) {
     <>
       <StyleTag />
 
-      <main className={isEmbed ? "mx-auto w-full max-w-[1080px] p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
-        <div className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}>
+      <main className={isEmbed ? "mx-auto w-full max-w-7xl p-3" : "mx-auto max-w-6xl px-4 py-6 md:py-8 min-h-screen"}>
+        <div
+          className={isEmbed ? "grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch isolate" : "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 items-stretch isolate"}
+          style={isEmbed ? { height: "calc(100dvh - 24px)" } : undefined}
+        >
           {/* 좌측 미리보기 카드 */}
           <section className="card overflow-hidden h-full z-0 bg-white">
             <div className="bg-black flex items-center justify-center">
@@ -361,14 +432,9 @@ function Home({ compact = false }) {
           </section>
 
           {/* 우측 입력 카드 */}
-          <section className={`rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left h-full z-10 ${compact ? '' : 'before:content-[""] before:absolute before:-left-4 before:top-0 before:bottom-0 before:w-0 md:before:w-px md:before:bg-blue-100 md:before:opacity-70 md:before:-left-3'}`}>
-            {/* 말풍선 헤더 */}
-            <div className="flex items-start gap-3 mb-4">
-              <img src={guideImg} alt="guide" className="w-10 h-10 md:w-11 md:h-11 rounded-full object-cover border" />
-              <div className="text-sm px-4 py-2 rounded-[14px] border border-blue-300 bg-white/70 shadow-[0_4px_12px_rgba(30,64,175,0.06)]">
-                <TypingText text={"활동하실 인물을 생성해보세요."} />
-              </div>
-            </div>
+          <section
+            className="rounded-2xl border border-blue-200 bg-white p-5 md:p-6 shadow-[0_20px_40px_rgba(30,64,175,0.08)] relative text-left z-10 overflow-y-auto pr-2 h-full"
+          >
 
             {/* 인플루언서 정보 */}
             <div className="mt-1 mb-1 text-base font-semibold">인플루언서 정보</div>
@@ -388,8 +454,9 @@ function Home({ compact = false }) {
                     value={gender}
                     onChange={(e) => setGender(e.target.value)}
                   >
-                    <option>여</option>
-                    <option>남</option>
+                    <option value="">없음</option>
+                    <option value="여">여</option>
+                    <option value="남">남</option>
                   </select>
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">▾</span>
                 </div>
@@ -401,39 +468,46 @@ function Home({ compact = false }) {
               <Field label="나이" compact>
                 <input
                   type="number"
-                  min={20}
-                  max={80}
+                  min={1}
+                  max={120}
                   className="w-full px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                  value={age}
+                  value={ageStr}
                   onChange={(e) => {
-                    const v = Number(String(e.target.value).replace(/[^\d]/g, ""));
-                    if (Number.isNaN(v)) return setAge("");
-                    const clamped = Math.max(20, Math.min(80, v));
-                    setAge(clamped);
+                    const v = String(e.target.value).replace(/[^\d]/g, "");
+                    setAgeStr(v);
+                  }}
+                  onBlur={() => {
+                    if (ageStr === "") return;
+                    const n = Number(ageStr);
+                    if (!Number.isFinite(n)) { setAgeStr(""); return; }
+                    const clamped = Math.max(1, Math.min(120, Math.floor(n)));
+                    setAgeStr(String(clamped));
                   }}
                   placeholder="예: 23"
                 />
               </Field>
-
-              <Field label="안경" compact>
-                <div className="relative">
-                  <select
-                    className="w-full appearance-none px-4 py-2 rounded-lg border border-blue-200 bg-white/70 focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    value={glasses}
-                    onChange={(e) => setGlasses(e.target.value)}
-                  >
-                    <option value="">선택</option>
-                    <option value="없음">없음</option>
-                    <option value="있음">있음</option>
-                  </select>
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">▾</span>
-                </div>
-              </Field>
+                      {/* 성격: 드롭다운 (상단 정보 영역에 배치) */}
+                      <Field label="성격" compact>
+                        <Select
+                          value={personalities[0] || ""}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonalities(v ? [v] : []);
+                          }}
+                        >
+                          {personalityList.map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </Select>
+                      </Field>
             </div>
 
-            {/* 얼굴 디테일 */}
-            <div className="mt-1 mb-1 text-base font-semibold">얼굴 디테일</div>
-            <div className="grid grid-cols-2 gap-4">
+            {/* 얼굴 디테일: 인플루언서 정보 완료 시 애니메이션 표시 */}
+            <div
+              className={(isInfoReady ? "max-h-[2000px] opacity-100 translate-y-0 " : "max-h-0 opacity-0 -translate-y-1 pointer-events-none overflow-hidden ") + "transition-all duration-500 ease-out"}
+            >
+              <div className="mt-1 mb-2 text-base font-semibold">얼굴 디테일</div>
+              <div className="grid grid-cols-2 gap-5">
               <Field label="얼굴형" compact>
                 <Select value={faceShape} onChange={(e) => setFaceShape(e.target.value)}>
                   {faceShapes.map((v) => (
@@ -445,6 +519,22 @@ function Home({ compact = false }) {
               <Field label="피부톤" compact>
                 <Select value={skinTone} onChange={(e) => setSkinTone(e.target.value)}>
                   {skinTones.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="이마 길이" compact>
+                <Select value={foreheadLength} onChange={(e) => setForeheadLength(e.target.value)}>
+                  {foreheadLengths.map((v) => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="눈썹 모양" compact>
+                <Select value={eyebrowShape} onChange={(e) => setEyebrowShape(e.target.value)}>
+                  {eyebrowShapes.map((v) => (
                     <option key={v} value={v}>{v}</option>
                   ))}
                 </Select>
@@ -481,73 +571,86 @@ function Home({ compact = false }) {
                   ))}
                 </Select>
               </Field>
+              </div>
             </div>
 
-            {/* 체형 */}
-            <div className="mt-3 mb-1 text-sm font-semibold">체형</div>
-            <div className="grid grid-cols-5 gap-2 mb-3">
-              {bodyTypes.map((p) => {
-                const on = bodyType === p;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setBodyType(on ? "" : p)}
-                    className={"chip " + (on ? "chip-on" : "")}
-                    aria-pressed={on}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
+            {/* 체형/특징: 인플루언서 정보 완료 시 애니메이션 표시 */}
+            <div
+              className={(isInfoReady ? "max-h-[1200px] opacity-100 translate-y-0 " : "max-h-0 opacity-0 -translate-y-1 pointer-events-none overflow-hidden ") + "transition-all duration-500 ease-out"}
+            >
+              {/* 체형 */}
+              <div className="mt-4 mb-2 text-sm font-semibold">체형</div>
+
+              <div className="chip-row-left chip-grid-left mb-4 w-full">
+                {bodyTypes.map((p) => {
+                  const on = bodyType === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setBodyType(on ? "" : p)}
+                      className={"chip " + (on ? "chip-on" : "")}
+                      aria-pressed={on}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 특징(멀티-선택) */}
+              <div className="mt-4 mb-2 text-sm font-semibold">특징</div>
+              <div className="chip-row-left chip-grid-left mb-4 w-full">
+                {featuresList.map((feature) => {
+                  const on = features.includes(feature);
+                  return (
+                    <button
+                      key={feature}
+                      type="button"
+                      onClick={() =>
+                        setFeatures((prev) =>
+                          prev.includes(feature)
+                            ? prev.filter((f) => f !== feature)
+                            : [...prev, feature]
+                        )
+                      }
+                      className={"chip " + (on ? "chip-on" : "")}
+                      aria-pressed={on}
+                    >
+                      {feature}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {/* 성격 */}
-            <div className="mt-2 mb-1 text-sm font-semibold">
-              성격 <span className="text-slate-400"></span>
-            </div>
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {personalityList.map((p) => {
-                const on = personalities.includes(p);
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPersonalities(on ? [] : [p])} // single-select 유지
-                    className={"chip " + (on ? "chip-on" : "")}
-                    aria-pressed={on}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 버튼 */}
-            <div className="flex justify-end gap-2 mt-4">
-              <button
-                className={`${canGenerate ? "btn-primary" : "btn-outline"} ${(loading || !canGenerate) ? "opacity-60 cursor-not-allowed" : ""}`}
-                type="button"
-                onClick={onGenerate}
-                disabled={loading || !canGenerate}
-              >
-                이미지 생성
-              </button>
-              <button
-                className={`${canConfirm ? "btn-primary" : "btn-outline"} ${((loading || saving) || !canConfirm) ? "opacity-60 cursor-not-allowed" : ""}`}
-                onClick={() => {
-                  if (!canConfirm || loading || saving) return;
-                  if (!generated || !lastPayload) {
-                    setError("먼저 이미지를 생성하세요.");
-                    return;
-                  }
-                  setConfirmOpen(true);
-                }}
-                disabled={(loading || saving) || !canConfirm}
-              >
-                {saving ? "저장중…" : "프로필 저장"}
-              </button>
-            </div>
+            {/* 버튼: 인플루언서 정보가 완료되면(= 얼굴 디테일이 열릴 때) 함께 표시 */}
+            {isInfoReady && (
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  className={`${canGenerate ? "btn-primary" : "btn-outline"} ${(loading || !canGenerate) ? "opacity-60 cursor-not-allowed" : ""}`}
+                  type="button"
+                  onClick={onGenerate}
+                  disabled={loading || !canGenerate}
+                >
+                  이미지 생성
+                </button>
+                <button
+                  className={`${canConfirm ? "btn-primary" : "btn-outline"} ${((loading || saving) || !canConfirm) ? "opacity-60 cursor-not-allowed" : ""}`}
+                  onClick={() => {
+                    if (!canConfirm || loading || saving) return;
+                    if (!generated || !lastPayload) {
+                      setError("먼저 이미지를 생성하세요.");
+                      return;
+                    }
+                    setConfirmOpen(true);
+                  }}
+                  disabled={(loading || saving) || !canConfirm}
+                >
+                  {saving ? "저장중…" : "프로필 저장"}
+                </button>
+              </div>
+            )}
 
             {error && <p className="mt-3 text-sm text-red-600" role="alert">{error}</p>}
           </section>
