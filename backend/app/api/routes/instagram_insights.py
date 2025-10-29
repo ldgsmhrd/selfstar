@@ -18,6 +18,38 @@ from .oauth_instagram import (
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
+async def _ensure_instagram_post_table():
+    pool = await get_mysql_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ss_instagram_post (
+                  ig_media_id        VARCHAR(64) PRIMARY KEY,
+                  user_id            INT           NOT NULL,
+                  user_persona_num   INT           NOT NULL,
+                  ig_user_id         VARCHAR(64)   NOT NULL,
+                  media_type         VARCHAR(32)   NULL,
+                  media_product_type VARCHAR(32)   NULL,
+                  media_url          TEXT          NULL,
+                  thumbnail_url      TEXT          NULL,
+                  permalink          TEXT          NULL,
+                  caption            TEXT          NULL,
+                  timestamp          DATETIME      NULL,
+                  like_count         INT           NULL,
+                  comments_count     INT           NULL,
+                  created_at         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                  updated_at         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                  KEY idx_persona_ts (user_id, user_persona_num, timestamp)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """
+            )
+            try:
+                await conn.commit()
+            except Exception:
+                pass
+
+
 
 def _iso_date(d: datetime) -> str:
     return d.strftime("%Y-%m-%d")
@@ -337,39 +369,6 @@ async def media_detail(request: Request, persona_num: int, media_id: str):
 
 # ====== Daily snapshot storage and delta endpoints ======
 
-CREATE_SQL = (
-    """
-        CREATE TABLE IF NOT EXISTS persona_ig_daily_insights (
-      id BIGINT AUTO_INCREMENT PRIMARY KEY,
-      user_id BIGINT NOT NULL,
-      user_persona_num INT NOT NULL,
-      ig_user_id VARCHAR(64) NOT NULL,
-      date DATE NOT NULL,
-      followers_count INT DEFAULT NULL,
-      total_likes INT DEFAULT NULL,
-      profile_views INT DEFAULT NULL,
-      reach INT DEFAULT NULL,
-      impressions INT DEFAULT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY uniq_user_persona_date (user_id, user_persona_num, date)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """
-)
-
-
-async def _ensure_table():
-    try:
-        pool = await get_mysql_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(CREATE_SQL)
-                try:
-                    await conn.commit()
-                except Exception:
-                    pass
-    except Exception:
-        # table creation failures should not fully break API, raise on insert instead
-        pass
 
 
 async def _paginate_media(client: httpx.AsyncClient, ig_user_id: str, token: str, limit_total: int = 200):
@@ -408,7 +407,7 @@ async def _paginate_media(client: httpx.AsyncClient, ig_user_id: str, token: str
 
 async def perform_snapshot(user_id: int, persona_num: int) -> dict:
     """Core snapshot logic reusable by API and scheduler."""
-    await _ensure_table()
+
     mapping = await _get_persona_instagram_mapping(int(user_id), int(persona_num))
     if not mapping or not mapping.get("ig_user_id"):
         raise HTTPException(status_code=400, detail="persona_instagram_not_linked")
@@ -462,13 +461,13 @@ async def perform_snapshot(user_id: int, persona_num: int) -> dict:
         if impressions is None:
             impressions = 0
         total_likes = await _paginate_media(client, ig_user_id, token, limit_total=200)
-    # upsert
+    # upsert to ss_dashboard
     pool = await get_mysql_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
-                INSERT INTO persona_ig_daily_insights
+                INSERT INTO ss_dashboard
                     (user_id, user_persona_num, ig_user_id, date, followers_count, total_likes, profile_views, reach, impressions)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON DUPLICATE KEY UPDATE
@@ -516,7 +515,7 @@ async def insights_daily(request: Request, persona_num: int, days: int = 30):
                 await cur.execute(
                     """
                     SELECT date, followers_count, total_likes
-                    FROM persona_ig_daily_insights
+                    FROM ss_dashboard
                     WHERE user_id=%s AND user_persona_num=%s AND date >= %s
                     ORDER BY date ASC
                     """,

@@ -7,6 +7,7 @@ import httpx
 import logging
 import aiomysql
 from app.api.core.mysql import get_mysql_pool
+from app.core.s3 import s3_enabled, presign_get_url, put_data_uri
 
 # 파트: 채팅/이미지 생성 API
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -52,6 +53,14 @@ async def send(req: ChatRequest, request: Request):
                         persona_img = row["persona_img"]
         except Exception as e:
             log.warning("persona lookup failed: %s", e)
+
+    # persona_img가 S3 키라면 프리사인 URL로 변환
+    try:
+        if persona_img and not persona_img.lower().startswith("http") and not persona_img.startswith("data:") and not persona_img.startswith("/"):
+            if s3_enabled():
+                persona_img = presign_get_url(persona_img)
+    except Exception as _e:
+        log.warning("persona_img presign failed: %s", _e)
 
     ai_url = (os.getenv("AI_SERVICE_URL") or "http://localhost:8600").rstrip("/")
     # 전송: POST {ai}/chat
@@ -125,6 +134,7 @@ async def image(req: ChatImageRequest, request: Request):
                 row = await cur.fetchone()
                 if not row:
                     raise HTTPException(status_code=404, detail="persona_not_found")
+                persona_db_id = int(req.persona_num)
                 persona_img = row.get("persona_img")
                 # persona_parameters는 JSON 문자열 또는 dict일 수 있음 → 문자열로 보냄
                 pp = row.get("persona_parameters")
@@ -142,7 +152,7 @@ async def image(req: ChatImageRequest, request: Request):
     if not persona_img:
         raise HTTPException(status_code=400, detail="persona_img_missing")
 
-    # 2) AI에서 접근 가능한 URL로 정규화
+    # 2) AI에서 접근 가능한 URL로 정규화 + S3 키면 프리사인
     def _normalize_persona_img(raw: str) -> str:
         try:
             if raw.startswith("data:"):
@@ -155,6 +165,9 @@ async def image(req: ChatImageRequest, request: Request):
                 p = urlparse(raw)
                 repl = p._replace(netloc="backend:8000")
                 return urlunparse(repl)
+            # 그 외(http/https, /media가 아닌 경우) → S3 키로 보고 프리사인 시도
+            if s3_enabled():
+                return presign_get_url(raw)
             return raw
         except Exception:
             return raw
@@ -190,78 +203,61 @@ async def image(req: ChatImageRequest, request: Request):
         raise HTTPException(status_code=502, detail={"ai_failed": True, "status": r.status_code, "body": detail})
     ai_json = r.json()
 
-    # 3) 이미지 파일 저장(+ DB 기록)
+    # 3) 이미지 파일 저장(+ DB 기록) — S3(chat/{user_id}/{persona_id})에 저장하고 ss_chat에 기록
     stored = None
     try:
         img_str = ai_json.get("image") if isinstance(ai_json, dict) else None
         if isinstance(img_str, str) and img_str.startswith("data:"):
-            import base64, uuid, datetime, re
-            files_root = os.getenv("FILES_ROOT") or os.path.join(os.path.dirname(__file__), "..", "..", "storage")
-            # 확장자 결정
-            m = re.match(r"^data:([\w\-/]+);base64,", img_str)
-            mime = m.group(1) if m else "image/png"
-            ext = {
-                "image/png": "png",
-                "image/jpeg": "jpg",
-                "image/jpg": "jpg",
-                "image/webp": "webp",
-            }.get(mime, "png")
-            # yyyyMMdd 디렉터리 생성
-            date_dir = datetime.datetime.utcnow().strftime("%Y%m%d")
-            abs_dir = os.path.abspath(os.path.join(files_root, date_dir))
-            os.makedirs(abs_dir, exist_ok=True)
-            fname = f"{uuid.uuid4().hex[:12]}.{ext}"
-            abs_path = os.path.join(abs_dir, fname)
-            rel_path = f"{date_dir}/{fname}"
-            # base64 -> 파일 쓰기
-            b64 = img_str.split(",", 1)[1]
-            with open(abs_path, "wb") as f:
-                f.write(base64.b64decode(b64))
+            if not s3_enabled():
+                raise HTTPException(status_code=400, detail="s3_not_configured")
+            # 키 경로: chat/{user_id}/{persona_id}
+            key = put_data_uri(
+                img_str,
+                model=None,
+                key_prefix=f"chat/{int(user_id)}/{int(persona_db_id)}",
+                base_prefix="",
+                include_model=False,
+                include_date=False,
+            )
+            url = presign_get_url(key)
 
-            # DB 기록: ss_img(user_id, img_img, ss_persona_id)
-            ss_persona_id: Optional[int] = None
+            # DB 기록: ss_chat(chat_id PK auto, user_id, persona_id, persona_chat_img, created_at)
+            chat_id = None
             try:
                 pool = await get_mysql_pool()
                 async with pool.acquire() as conn:
-                    async with conn.cursor(aiomysql.DictCursor) as cur:
+                    async with conn.cursor() as cur:
+                        # 테이블 보장(없으면 생성)
                         await cur.execute(
                             """
-                            SELECT id
-                            FROM ss_persona
-                            WHERE user_id=%s AND user_persona_num=%s
-                            LIMIT 1
-                            """,
-                            (int(user_id), int(req.persona_num)),
-                        )
-                        prow = await cur.fetchone()
-                        if prow and prow.get("id") is not None:
-                            ss_persona_id = int(prow["id"])
-                async with pool.acquire() as conn2:
-                    async with conn2.cursor() as cur2:
-                        await cur2.execute(
+                            CREATE TABLE IF NOT EXISTS ss_chat (
+                              chat_id INT AUTO_INCREMENT PRIMARY KEY,
+                              user_id INT NOT NULL,
+                              persona_id INT NOT NULL,
+                              persona_chat_img VARCHAR(500) NOT NULL,
+                              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                             """
-                            INSERT INTO ss_img (user_id, img_img, ss_persona_id)
+                        )
+                        await cur.execute(
+                            """
+                            INSERT INTO ss_chat (user_id, persona_id, persona_chat_img)
                             VALUES (%s, %s, %s)
                             """,
-                            (int(user_id), rel_path, ss_persona_id),
+                            (int(user_id), int(persona_db_id), key),
                         )
+                        await conn.commit()
                         try:
-                            await conn2.commit()
+                            chat_id = cur.lastrowid
                         except Exception:
-                            pass
-                        try:
-                            ss_img_id = cur2.lastrowid
-                        except Exception:
-                            ss_img_id = None
+                            chat_id = None
             except Exception as _e:
-                log.warning("ss_img insert failed: %s", _e)
-                ss_img_id = None
+                log.warning("ss_chat insert failed: %s", _e)
+                chat_id = None
 
-            stored = {
-                "path": rel_path,
-                "url": f"/files/{rel_path}",
-                "id": ss_img_id,
-            }
+            stored = {"key": key, "url": url, "id": chat_id}
+    except HTTPException:
+        raise
     except Exception as e:
         log.warning("image store failed: %s", e)
 
@@ -270,6 +266,73 @@ async def image(req: ChatImageRequest, request: Request):
             ai_json["stored"] = stored
         return ai_json
     return {"ok": True, "image": ai_json, "stored": stored}
+
+
+@router.get("/gallery")
+async def list_gallery(request: Request, persona_num: Optional[int] = None, limit: int = 60, offset: int = 0):
+    """현재 로그인 사용자의 채팅 생성 이미지 갤러리 목록을 반환.
+
+    - 기본 정렬: 최신순(chat_id DESC)
+    - persona_num이 있으면 해당 페르소나로 필터링
+    - 반환 시 persona_chat_img가 S3 키면 프리사인 URL로 변환하여 url 필드에 넣어줌
+    """
+    user_id = request.session.get("user_id") if hasattr(request, "session") else None
+    if not user_id:
+        raise HTTPException(status_code=401, detail="not_logged_in")
+
+    try:
+        persona_db_id = None
+        if persona_num is not None:
+            # ss_chat.persona_id에는 user_persona_num을 저장하므로 그대로 사용
+            persona_db_id = int(persona_num)
+
+        items = []
+        pool = await get_mysql_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                if persona_db_id is None:
+                    await cur.execute(
+                        """
+                        SELECT chat_id, user_id, persona_id, persona_chat_img, created_at
+                        FROM ss_chat
+                        WHERE user_id=%s
+                        ORDER BY chat_id DESC
+                        LIMIT %s OFFSET %s
+                        """,
+                        (int(user_id), int(limit), int(offset)),
+                    )
+                else:
+                    await cur.execute(
+                        """
+                        SELECT chat_id, user_id, persona_id, persona_chat_img, created_at
+                        FROM ss_chat
+                        WHERE user_id=%s AND persona_id=%s
+                        ORDER BY chat_id DESC
+                        LIMIT %s OFFSET %s
+                        """,
+                        (int(user_id), int(persona_db_id), int(limit), int(offset)),
+                    )
+                rows = await cur.fetchall() or []
+        for r in rows:
+            key = r.get("persona_chat_img") or ""
+            url = key
+            if key and not key.lower().startswith("http") and not key.startswith("/"):
+                try:
+                    if s3_enabled():
+                        url = presign_get_url(key)
+                except Exception:
+                    url = key
+            items.append({
+                "id": r.get("chat_id"),
+                "persona_id": r.get("persona_id"),
+                "key": key,
+                "url": url,
+                "created_at": r.get("created_at").isoformat() if r.get("created_at") else None,
+            })
+        return {"ok": True, "items": items}
+    except Exception as e:
+        log.exception("failed to list gallery: %s", e)
+        raise HTTPException(status_code=500, detail="gallery_failed")
 
 
 @router.get("/image")

@@ -140,19 +140,7 @@ try:
 except Exception as _e:
     logger.error(f"Failed to mount /media: {_e}")
 
-# files (신규: 생성 이미지/로컬 저장용, media와 분리)
-_DEFAULT_FILES = os.path.join(os.path.dirname(__file__), "storage")
-FILES_ROOT = os.getenv("FILES_ROOT") or _DEFAULT_FILES
-try:
-    os.makedirs(FILES_ROOT, exist_ok=True)
-except Exception as _e:
-    logger.error(f"Failed to create files directory {FILES_ROOT}: {_e}")
-
-try:
-    app.mount("/files", StaticFiles(directory=FILES_ROOT), name="files")
-    logger.info(f"Mounted static files at /files -> {FILES_ROOT}")
-except Exception as _e:
-    logger.error(f"Failed to mount /files: {_e}")
+# (제거) files 정적 마운트는 더 이상 사용하지 않음(S3로 대체)
 
 # ===== Health =====
 @app.get("/")

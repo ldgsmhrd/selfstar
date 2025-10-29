@@ -5,14 +5,14 @@ export default mergeConfig(base, defineConfig({
     host: true,
     port: 5174,
     strictPort: true,
-    allowedHosts: ['selfstar.duckdns.org'], // 필요 시 'all'
+    allowedHosts: 'all', // 개발환경에서 모든 호스트 허용
     hmr: {
-      protocol: 'wss',
-      host: 'selfstar.duckdns.org',
-      clientPort: 443,
-      port: 443,
+      protocol: 'ws', // 개발환경에서는 http 사용
+      host: 'localhost',
+      clientPort: 80,
+      port: 5174,
       path: '/hmr'
     }
   },
-  preview: { host: true, port: 5174, strictPort: true, allowedHosts: ['selfstar.duckdns.org'] },
+  preview: { host: true, port: 5174, strictPort: true, allowedHosts: 'all' },
 }));

@@ -1,0 +1,44 @@
+import { Link, useLocation } from "react-router-dom";
+import DashboardInsights from "./DashboardInsights.jsx";
+import DashboardPostInsights from "./DashboardPostInsights.jsx";
+
+export default function Dashboard() {
+  const location = useLocation();
+  const isPosts = location.pathname.includes('/post-insights');
+  return (
+    <main className="w-full min-h-screen bg-[#eaf5ff]">
+      <div className="mx-auto max-w-6xl px-6 py-7">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-black">프로페셔널 대시보드</h1>
+          <Link to="/mypage" className="btn light">마이페이지</Link>
+        </div>
+
+        <div className="grid grid-cols-12 gap-6">
+          {/* 왼쪽 메뉴 */}
+          <aside className="col-span-12 md:col-span-3">
+            <nav className="rounded-2xl border bg-white/80 p-3">
+              <Link to="/dashboard" className="block"><MenuItem label="인사이트" active={!isPosts} /></Link>
+              <Link to="/dashboard/post-insights" className="block mt-1"><MenuItem label="게시글 인사이트" active={isPosts} /></Link>
+            </nav>
+          </aside>
+
+          {/* 기본 콘텐츠: 인사이트 */}
+          <section className="col-span-12 md:col-span-9">
+            {isPosts ? <DashboardPostInsights /> : <DashboardInsights />}
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function MenuItem({ label, active }) {
+  return (
+    <div
+      className={`px-3 py-2 rounded-xl text-sm font-semibold ${active ? 'bg-blue-600 text-white' : 'text-slate-700 hover:bg-slate-100'}`}
+    >
+      {label}
+    </div>
+  );
+}
+  

@@ -79,3 +79,26 @@ async def get_user_personas(user_id: int) -> List[Dict[str, Any]]:
             for persona in personas:
                 persona['persona_parameters'] = json.loads(persona['persona_parameters'])
             return personas
+
+
+async def update_persona_img(user_id: int, persona_num: int, img_value: str) -> None:
+    """Update persona_img for the given user and persona number.
+
+    img_value should be an S3 key when using Object Storage, or a /media/... URL when using local storage.
+    """
+    pool = await get_mysql_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE ss_persona
+                SET persona_img = %s
+                WHERE user_id = %s AND user_persona_num = %s
+                LIMIT 1
+                """,
+                (img_value, user_id, persona_num),
+            )
+            try:
+                await conn.commit()
+            except Exception:
+                pass
