@@ -33,6 +33,11 @@ export default function MyPage() {
   const [igMappingLoading, setIgMappingLoading] = useState(false);
   // Insights는 마이페이지에서 표시하지 않음(대시보드 전용)
 
+  // Instagram posts (DB-cached) state
+  const [instaPosts, setInstaPosts] = useState([]); // [{id, media_url, thumbnail_url, permalink, timestamp, like_count, comments_count}]
+  const [instaLoading, setInstaLoading] = useState(false);
+  const [instaError, setInstaError] = useState(null);
+
   // Helper: build and navigate to OAuth start (keeps current flags)
   const startInstagramOAuth = () => {
     if (!activePersona?.num) {
@@ -210,6 +215,28 @@ export default function MyPage() {
     []
   );
 
+  // Load Instagram posts when Posts tab active or persona changes
+  useEffect(() => {
+    const load = async () => {
+      if (tab !== "posts") return;
+      if (!activePersona?.num) return;
+      setInstaLoading(true);
+      setInstaError(null);
+      try {
+  const res = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        setInstaPosts(Array.isArray(data?.items) ? data.items : []);
+      } catch (e) {
+        setInstaPosts([]);
+        setInstaError(e?.message || String(e));
+      } finally {
+        setInstaLoading(false);
+      }
+    };
+    load();
+  }, [tab, activePersona?.num]);
+
   // Load chat images gallery when Photos tab is active or persona changes
   useEffect(() => {
     const load = async () => {
@@ -358,33 +385,67 @@ export default function MyPage() {
 
             {tab === "posts" && (
               <>
-                {/* 기존 게시글 리스트(자리표시) */}
+                {/* Instagram posts (DB) */}
                 <Card>
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm text-slate-500">총 {posts.length}개</div>
-                    <select className="h-9 px-3 rounded-xl border border-slate-300 bg-white/80 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
-                      <option>전체</option>
-                      <option>발행</option>
-                      <option>예약</option>
-                      <option>초안</option>
-                      <option>작성</option>
-                    </select>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm text-slate-500">인스타 게시글 {Array.isArray(instaPosts) ? instaPosts.length : 0}개</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn light"
+                        onClick={async () => {
+                          if (!activePersona?.num) { setSelectorOpen(true); return; }
+                          setInstaLoading(true);
+                          try {
+                            const res = await fetch(`${API_BASE}/api/instagram/posts/sync?persona_num=${activePersona.num}&limit=18&days=30`, { method: 'POST', credentials: 'include' });
+                            // ignore errors, then reload list
+                          } catch {}
+                          try {
+                            const r = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
+                            if (r.ok) {
+                              const data = await r.json();
+                              setInstaPosts(Array.isArray(data?.items) ? data.items : []);
+                            }
+                          } finally { setInstaLoading(false); }
+                        }}
+                      >동기화</button>
+                      <button className="btn" onClick={async () => {
+                        if (!activePersona?.num) { setSelectorOpen(true); return; }
+                        setInstaLoading(true);
+                        try {
+                          const r = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
+                          if (r.ok) {
+                            const data = await r.json();
+                            setInstaPosts(Array.isArray(data?.items) ? data.items : []);
+                          }
+                        } finally { setInstaLoading(false); }
+                      }}>새로고침</button>
+                    </div>
                   </div>
-                  <div className="mt-3 divide-y">
-                    {posts.map((x) => (
-                      <div key={x.id} className="py-4 flex items-center justify-between">
-                        <div>
-                          <div className="font-semibold">{x.title}</div>
-                          <div className="text-xs text-slate-500">{x.date} · {x.channel}</div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full border ${badgeTone(x.status)}`}>{x.status}</span>
-                          <button className="btn light">미리보기</button>
-                          <button className="btn primary">편집</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  {instaLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
+                  {instaError && <div className="text-sm text-red-600">게시글을 불러오지 못했습니다: {instaError}</div>}
+                  {!instaLoading && !instaError && Array.isArray(instaPosts) && instaPosts.length === 0 && (
+                    <Empty title="연동된 인스타 게시글이 없어요" action="동기화" />
+                  )}
+                  {!instaLoading && !instaError && Array.isArray(instaPosts) && instaPosts.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {instaPosts.map((p) => (
+                        <a key={p.id} href={p.permalink || '#'} target="_blank" rel="noreferrer" className="block group relative rounded-xl overflow-hidden border border-slate-200 bg-white/60">
+                          {p.media_type === 'VIDEO' && p.thumbnail_url ? (
+                            <img src={p.thumbnail_url} alt="" className="w-full h-36 object-cover" loading="lazy" />
+                          ) : p.media_url ? (
+                            <img src={p.media_url} alt="" className="w-full h-36 object-cover" loading="lazy" />
+                          ) : (
+                            <div className="w-full h-36 bg-slate-100" />
+                          )}
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                          <div className="absolute bottom-0 left-0 right-0 text-[10px] text-white/90 bg-black/30 px-2 py-1 flex items-center justify-between gap-2">
+                            <span>{p.timestamp ? new Date(p.timestamp).toLocaleString() : ''}</span>
+                            <span>❤ {fmtNum(p.like_count)} · 💬 {fmtNum(p.comments_count)}</span>
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               </>
             )}
