@@ -13,6 +13,7 @@ from .oauth_instagram import (
     _get_persona_instagram_mapping,  # ss_persona에 저장된 IG 매핑(ig_user_id/fb_page_id)
 )
 from app.api.models.persona import get_user_personas as _get_user_personas
+from app.core.s3 import s3_enabled, presign_get_url
 
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
@@ -135,6 +136,13 @@ async def comments_overview(
             params = p.get("persona_parameters") or {}
             disp_name = params.get("name") or f"프로필 {num}"
             persona_img = p.get("persona_img")
+            # Normalize persona_img for browser use: presign S3 keys
+            try:
+                if persona_img and not str(persona_img).lower().startswith("http") and not str(persona_img).startswith("data:") and not str(persona_img).startswith("/"):
+                    if s3_enabled():
+                        persona_img = presign_get_url(str(persona_img))
+            except Exception:
+                pass
 
             results.append(
                 {

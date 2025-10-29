@@ -203,7 +203,7 @@ async def image(req: ChatImageRequest, request: Request):
         raise HTTPException(status_code=502, detail={"ai_failed": True, "status": r.status_code, "body": detail})
     ai_json = r.json()
 
-    # 3) 이미지 파일 저장(+ DB 기록) — S3(chat/{user_id}/{persona_id})에 저장하고 ss_chat에 기록
+    # 3) 이미지 파일 저장(+ DB 기록) — S3(chat/{user_id}/{persona_id})에 저장하고 ss_chat_img에 기록
     stored = None
     try:
         img_str = ai_json.get("image") if isinstance(ai_json, dict) else None
@@ -221,7 +221,7 @@ async def image(req: ChatImageRequest, request: Request):
             )
             url = presign_get_url(key)
 
-            # DB 기록: ss_chat(chat_id PK auto, user_id, persona_id, persona_chat_img, created_at)
+            # DB 기록: ss_chat_img(img_id PK auto, user_id, persona_id, img_key, created_at)
             chat_id = None
             try:
                 pool = await get_mysql_pool()
@@ -230,18 +230,18 @@ async def image(req: ChatImageRequest, request: Request):
                         # 테이블 보장(없으면 생성)
                         await cur.execute(
                             """
-                            CREATE TABLE IF NOT EXISTS ss_chat (
-                              chat_id INT AUTO_INCREMENT PRIMARY KEY,
+                            CREATE TABLE IF NOT EXISTS ss_chat_img (
+                              img_id INT AUTO_INCREMENT PRIMARY KEY,
                               user_id INT NOT NULL,
                               persona_id INT NOT NULL,
-                              persona_chat_img VARCHAR(500) NOT NULL,
+                              img_key VARCHAR(500) NOT NULL,
                               created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                             """
                         )
                         await cur.execute(
                             """
-                            INSERT INTO ss_chat (user_id, persona_id, persona_chat_img)
+                            INSERT INTO ss_chat_img (user_id, persona_id, img_key)
                             VALUES (%s, %s, %s)
                             """,
                             (int(user_id), int(persona_db_id), key),
@@ -252,7 +252,7 @@ async def image(req: ChatImageRequest, request: Request):
                         except Exception:
                             chat_id = None
             except Exception as _e:
-                log.warning("ss_chat insert failed: %s", _e)
+                log.warning("ss_chat_img insert failed: %s", _e)
                 chat_id = None
 
             stored = {"key": key, "url": url, "id": chat_id}
@@ -272,7 +272,7 @@ async def image(req: ChatImageRequest, request: Request):
 async def list_gallery(request: Request, persona_num: Optional[int] = None, limit: int = 60, offset: int = 0):
     """현재 로그인 사용자의 채팅 생성 이미지 갤러리 목록을 반환.
 
-    - 기본 정렬: 최신순(chat_id DESC)
+    - 기본 정렬: 최신순(img_id DESC)
     - persona_num이 있으면 해당 페르소나로 필터링
     - 반환 시 persona_chat_img가 S3 키면 프리사인 URL로 변환하여 url 필드에 넣어줌
     """
@@ -283,7 +283,7 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
     try:
         persona_db_id = None
         if persona_num is not None:
-            # ss_chat.persona_id에는 user_persona_num을 저장하므로 그대로 사용
+            # ss_chat_img.persona_id에는 user_persona_num을 저장하므로 그대로 사용
             persona_db_id = int(persona_num)
 
         items = []
@@ -293,10 +293,10 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                 if persona_db_id is None:
                     await cur.execute(
                         """
-                        SELECT chat_id, user_id, persona_id, persona_chat_img, created_at
-                        FROM ss_chat
+                        SELECT img_id, user_id, persona_id, img_key, created_at
+                        FROM ss_chat_img
                         WHERE user_id=%s
-                        ORDER BY chat_id DESC
+                        ORDER BY img_id DESC
                         LIMIT %s OFFSET %s
                         """,
                         (int(user_id), int(limit), int(offset)),
@@ -304,17 +304,17 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                 else:
                     await cur.execute(
                         """
-                        SELECT chat_id, user_id, persona_id, persona_chat_img, created_at
-                        FROM ss_chat
+                        SELECT img_id, user_id, persona_id, img_key, created_at
+                        FROM ss_chat_img
                         WHERE user_id=%s AND persona_id=%s
-                        ORDER BY chat_id DESC
+                        ORDER BY img_id DESC
                         LIMIT %s OFFSET %s
                         """,
                         (int(user_id), int(persona_db_id), int(limit), int(offset)),
                     )
                 rows = await cur.fetchall() or []
         for r in rows:
-            key = r.get("persona_chat_img") or ""
+            key = r.get("img_key") or ""
             url = key
             if key and not key.lower().startswith("http") and not key.startswith("/"):
                 try:
@@ -323,7 +323,7 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                 except Exception:
                     url = key
             items.append({
-                "id": r.get("chat_id"),
+                "id": r.get("img_id"),
                 "persona_id": r.get("persona_id"),
                 "key": key,
                 "url": url,
