@@ -92,6 +92,79 @@ async def _fetch_recent_media_and_comments(
     return media_items
 
 
+# ===== Instagram posts endpoints for MyPage =====
+@router.get("/posts")
+async def list_posts(request: Request, persona_num: Optional[int] = None, limit: int = 18):
+    """Return recent Instagram posts for the given persona.
+
+    This is a lightweight passthrough to Meta Graph; results are not persisted.
+    """
+    uid = _require_login(request)
+    if persona_num is None:
+        raise HTTPException(status_code=400, detail="persona_num_required")
+
+    mapping = await _get_persona_instagram_mapping(int(uid), int(persona_num))
+    if not mapping or not mapping.get("ig_user_id"):
+        # Not linked yet
+        return {"ok": True, "items": []}
+    token = await _get_persona_token(int(uid), int(persona_num))
+    if not token:
+        # Persona OAuth not completed
+        raise HTTPException(status_code=401, detail="persona_oauth_required")
+
+    items: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(
+                f"{IG_GRAPH}/{mapping['ig_user_id']}/media",
+                params={
+                    "access_token": token,
+                    "fields": "id,media_type,media_url,thumbnail_url,permalink,timestamp,caption",
+                    "limit": max(1, int(limit)),
+                },
+            )
+        if r.status_code != 200:
+            # surface as HTTP error to UI
+            raise HTTPException(status_code=r.status_code, detail=r.text)
+        data = (r.json() or {}).get("data") or []
+        for m in data:
+            if not m.get("id"):
+                continue
+            items.append(
+                {
+                    "id": m.get("id"),
+                    "media_type": m.get("media_type"),
+                    "media_url": m.get("media_url"),
+                    "thumbnail_url": m.get("thumbnail_url"),
+                    "permalink": m.get("permalink"),
+                    "timestamp": m.get("timestamp"),
+                    # counts are optional; default to 0 for UI
+                    "like_count": 0,
+                    "comments_count": 0,
+                }
+            )
+        return {"ok": True, "items": items}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"posts_failed:{e}")
+
+
+@router.post("/posts/sync")
+async def sync_posts(request: Request, persona_num: Optional[int] = None, limit: int = 18, days: Optional[int] = None):
+    """Trigger a refresh of posts.
+
+    For now, this just hits the Graph and returns count; persistence can be added later.
+    """
+    # Reuse list_posts logic
+    res = await list_posts(request, persona_num=persona_num, limit=limit)
+    try:
+        count = len(res.get("items") or [])  # type: ignore
+    except Exception:
+        count = 0
+    return {"ok": True, "synced": count}
+
+
 @router.get("/comments/overview")
 async def comments_overview(
     request: Request,

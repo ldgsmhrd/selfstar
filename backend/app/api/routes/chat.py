@@ -290,6 +290,18 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
         pool = await get_mysql_pool()
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
+                # 테이블이 없을 수 있으므로 보장
+                await cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ss_chat_img (
+                      img_id INT AUTO_INCREMENT PRIMARY KEY,
+                      user_id INT NOT NULL,
+                      persona_id INT NOT NULL,
+                      img_key VARCHAR(500) NOT NULL,
+                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                    """
+                )
                 if persona_db_id is None:
                     await cur.execute(
                         """
