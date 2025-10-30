@@ -50,26 +50,23 @@ try:
 except Exception:
     pass
 
-try:
-    from .instagram_publish import router as ig_publish_router
-    router.include_router(ig_publish_router)
-except Exception:
-    pass
+"""
+주의: instagram 관련 일반 API(게시글/인사이트/게시)는 /api 접두사로만 노출하기 위해
+여기(router 집계)에서는 등록하지 않습니다. app.main에서 prefix="/api"로만 include합니다.
+- instagram_publish
+- instagram_comments
+- instagram_insights
+OAuth(redirect/callback)은 기존처럼 /oauth/instagram 경로로 유지합니다.
+"""
+
+# instagram_comments: app.main에서 /api 접두사로만 등록
+
+# instagram_insights: app.main에서 /api 접두사로만 등록
 
 try:
-    from .instagram_comments import router as ig_comments_router
-    router.include_router(ig_comments_router)
-except Exception:
+    # chat 라우터는 전역(router)에는 등록하지 않습니다.
+    # 백엔드 엔트리(app.main)에서 '/api' 접두사로만 노출하여
+    # 일관되게 /api/chat 경로만 사용하도록 강제합니다.
     pass
-
-try:
-    from .instagram_insights import router as ig_insights_router
-    router.include_router(ig_insights_router)
-except Exception:
-    pass
-
-try:
-    from .chat import router as chat_router
-    router.include_router(chat_router, tags=["chat"])
 except Exception:
     pass
