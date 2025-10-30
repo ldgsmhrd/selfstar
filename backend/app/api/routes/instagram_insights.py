@@ -16,7 +16,7 @@ from .oauth_instagram import (
     _get_persona_instagram_mapping,
 )
 
-router = APIRouter(prefix="/instagram", tags=["instagram"])
+router = APIRouter(prefix="/api/instagram", tags=["instagram"])
 
 
 def _iso_date(d: datetime) -> str:

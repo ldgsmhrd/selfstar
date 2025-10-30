@@ -16,7 +16,7 @@ from .oauth_instagram import (
 
 
 # 파트: Instagram 게시 API
-router = APIRouter(prefix="/instagram", tags=["instagram"])
+router = APIRouter(prefix="/api/instagram", tags=["instagram"])
 
 
 class InstagramPublishRequest(BaseModel):
