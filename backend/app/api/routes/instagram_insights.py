@@ -18,71 +18,6 @@ from .oauth_instagram import (
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
-async def _ensure_instagram_post_table():
-    pool = await get_mysql_pool()
-    async with pool.acquire() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ss_instagram_post (
-                  ig_media_id        VARCHAR(64) PRIMARY KEY,
-                  user_id            INT           NOT NULL,
-                  user_persona_num   INT           NOT NULL,
-                  ig_user_id         VARCHAR(64)   NOT NULL,
-                  media_type         VARCHAR(32)   NULL,
-                  media_product_type VARCHAR(32)   NULL,
-                  media_url          TEXT          NULL,
-                  thumbnail_url      TEXT          NULL,
-                  permalink          TEXT          NULL,
-                  caption            TEXT          NULL,
-                  timestamp          DATETIME      NULL,
-                  like_count         INT           NULL,
-                  comments_count     INT           NULL,
-                  created_at         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                  updated_at         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                  KEY idx_persona_ts (user_id, user_persona_num, timestamp)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-                """
-            )
-            try:
-                await conn.commit()
-            except Exception:
-                pass
-
-
-async def _ensure_dashboard_table():
-    """Create ss_dashboard if it does not exist. Ignore CREATE privilege errors."""
-    try:
-        pool = await get_mysql_pool()
-        async with pool.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS ss_dashboard (
-                      user_id INT NOT NULL,
-                      user_persona_num INT NOT NULL,
-                      ig_user_id VARCHAR(100) NOT NULL,
-                      date DATE NOT NULL,
-                      followers_count INT DEFAULT 0,
-                      total_likes INT DEFAULT 0,
-                      profile_views INT DEFAULT 0,
-                      reach INT DEFAULT 0,
-                      impressions INT DEFAULT 0,
-                      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                      UNIQUE KEY uq_dash_day (user_id, user_persona_num, date),
-                      KEY idx_dash_ig (ig_user_id)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                    """
-                )
-                try:
-                    await conn.commit()
-                except Exception:
-                    pass
-    except Exception:
-        # no create privilege or connection error — ignore
-        pass
-
 
 def _iso_date(d: datetime) -> str:
     return d.strftime("%Y-%m-%d")
@@ -494,8 +429,7 @@ async def perform_snapshot(user_id: int, persona_num: int) -> dict:
         if impressions is None:
             impressions = 0
         total_likes = await _paginate_media(client, ig_user_id, token, limit_total=200)
-    # upsert to ss_dashboard
-    await _ensure_dashboard_table()
+    # upsert to ss_dashboard (assumes table already exists)
     pool = await get_mysql_pool()
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -546,11 +480,6 @@ async def insights_daily(request: Request, persona_num: int, days: int = 30):
         pool = await get_mysql_pool()
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                # ensure table exists before querying
-                try:
-                    await _ensure_dashboard_table()
-                except Exception:
-                    pass
                 await cur.execute(
                     """
                     SELECT date, followers_count, total_likes

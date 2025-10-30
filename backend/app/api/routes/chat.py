@@ -227,18 +227,6 @@ async def image(req: ChatImageRequest, request: Request):
                 pool = await get_mysql_pool()
                 async with pool.acquire() as conn:
                     async with conn.cursor() as cur:
-                        # 테이블 보장(없으면 생성) — 최신 스키마
-                        await cur.execute(
-                            """
-                            CREATE TABLE IF NOT EXISTS ss_chat_img (
-                              img_id INT AUTO_INCREMENT PRIMARY KEY,
-                              user_id INT NOT NULL,
-                              persona_id INT NOT NULL,
-                              img_key VARCHAR(500) NOT NULL,
-                              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                            """
-                        )
                         inserted = False
                         # 1차 시도: 최신 컬럼(img_key)
                         try:
@@ -311,22 +299,6 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
         pool = await get_mysql_pool()
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                # 테이블이 없을 수 있으므로 보장(최신 스키마 기준)
-                # 운영 환경에서 CREATE 권한이 없을 수 있어도 무시하고 조회만 시도합니다.
-                try:
-                    await cur.execute(
-                        """
-                        CREATE TABLE IF NOT EXISTS ss_chat_img (
-                          img_id INT AUTO_INCREMENT PRIMARY KEY,
-                          user_id INT NOT NULL,
-                          persona_id INT NOT NULL,
-                          img_key VARCHAR(500) NOT NULL,
-                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-                        """
-                    )
-                except Exception as _cte:
-                    log.warning("CREATE TABLE ignored: %s", _cte)
                 rows = []
                 # 1차: 최신 컬럼(img_id, img_key)
                 try:
@@ -380,8 +352,9 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                             )
                         rows = await cur.fetchall() or []
                     except Exception as _se2:
-                        log.exception("failed to list gallery (both schemas): %s / %s", _se, _se2)
-                        raise
+                        # 운영 DB 권한/스키마 문제로 테이블이 없거나 조회 실패 시 빈 목록 반환
+                        log.warning("gallery select failed on both schemas; returning empty. err1=%s err2=%s", _se, _se2)
+                        rows = []
         for r in rows:
             key = r.get("img_key") or ""
             url = key

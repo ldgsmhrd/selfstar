@@ -66,7 +66,10 @@ GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image-pre
 
 
 def _build_prompt_from_fields(payload: dict) -> str:
-    """프론트에서 온 필드들을 최소 가공 텍스트로 결합"""
+    """프론트에서 온 필드들을 최소 가공 텍스트로 결합
+
+    요구사항: 이미지 생성 시 '이름'과 '성격(personalities)'은 프롬프트에 포함하지 않는다.
+    """
     name = payload.get("name")
     gender = payload.get("gender")
     age = payload.get("age")
@@ -89,8 +92,6 @@ def _build_prompt_from_fields(payload: dict) -> str:
         f"Subject: {gender or 'person'}. "
         "Natural lighting, realistic skin. Plain light-gray studio background. Output PNG."
     )
-    if name:
-        base += f" The person is named '{name}'."
 
     parts = []
     if age is not None:
@@ -111,8 +112,7 @@ def _build_prompt_from_fields(payload: dict) -> str:
         parts.append(f"Body type: {bodyType}.")
     if glasses:
         parts.append(f"Glasses: {glasses}.")
-    if personalities:
-        parts.append("Personality vibes: " + ", ".join(map(str, personalities)) + ".")
+    # NOTE: personalities(성격)는 이미지 생성 프롬프트에서 제외
     if options:
         parts.append("Options: " + ", ".join(map(str, options)) + ".")
     if legacy_feature:
@@ -209,7 +209,9 @@ async def predict(req: PredictRequest):
             try:
                 img = Image.new("RGB", (768, 1024), color=(240, 242, 245))
                 draw = ImageDraw.Draw(img)
-                text = f"{req.name} / {req.gender}\nPlaceholder portrait"
+                # 이름은 제외, 성별만 간단 표기
+                g = req.gender or "person"
+                text = f"{g}\nPlaceholder portrait"
                 draw.text((24, 24), text, fill=(30, 30, 30))
                 buf = BytesIO()
                 img.save(buf, format="PNG")
