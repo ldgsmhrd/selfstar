@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 export default function Footer() {
   const year = new Date().getFullYear();
 
@@ -50,10 +52,10 @@ export default function Footer() {
           <div>
             <div className="text-sm font-semibold text-slate-900">제품</div>
             <ul className="mt-3 space-y-2 text-sm text-slate-600">
-              <li><a href="#" className="hover:text-slate-900">대시보드</a></li>
-              <li><a href="#" className="hover:text-slate-900">예약 발행</a></li>
-              <li><a href="#" className="hover:text-slate-900">리포트/통계</a></li>
-              <li><a href="#" className="hover:text-slate-900">크레딧/요금제</a></li>
+                <li><Link to="/dashboard" className="hover:text-slate-900">대시보드</Link></li>
+                <li><a href="#" className="hover:text-slate-900">예약 발행</a></li>
+                <li><a href="#" className="hover:text-slate-900">리포트/통계</a></li>
+                <li><Link to="/credits" className="hover:text-slate-900">크레딧/요금제</Link></li>
             </ul>
           </div>
 

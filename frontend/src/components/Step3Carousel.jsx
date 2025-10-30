@@ -35,12 +35,24 @@ export default function Step3Carousel({ images = defaultSlides }) {
   return (
     <div className="relative rounded-[1.8rem] border bg-white shadow overflow-hidden">
       <div className="relative w-full bg-neutral-50" style={{ aspectRatio: "4/5" }}>
-        <img
-          src={images[idx].src}
-          alt={images[idx].alt}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="eager"
-        />
+        {/* For the first two slides we add white vertical padding so the image appears with top/bottom whitespace */}
+        {images[idx].padVertical ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-white p-6">
+            <img
+              src={images[idx].src}
+              alt={images[idx].alt}
+              className="max-h-full w-auto h-auto object-contain"
+              loading="eager"
+            />
+          </div>
+        ) : (
+          <img
+            src={images[idx].src}
+            alt={images[idx].alt}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="eager"
+          />
+        )}
         {/* badge */}
         {images[idx].badge && (
           <div className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full bg-black/60 text-white text-xs px-3 py-1">
@@ -101,12 +113,18 @@ export default function Step3Carousel({ images = defaultSlides }) {
             <X className="mx-auto" />
           </button>
           <div className="h-full w-full grid place-items-center p-6">
-            <div className="relative w-full max-w-5xl aspect-video bg-black rounded-xl overflow-hidden">
-              <img
-                src={images[idx].src}
-                alt={images[idx].alt}
-                className="absolute inset-0 w-full h-full object-contain bg-black"
-              />
+            <div className="relative w-full max-w-5xl aspect-video bg-black rounded-xl overflow-hidden flex items-center justify-center">
+              {images[idx].padVertical ? (
+                <div className="w-full h-full flex items-center justify-center bg-white p-6">
+                  <img src={images[idx].src} alt={images[idx].alt} className="max-h-full w-auto object-contain" />
+                </div>
+              ) : (
+                <img
+                  src={images[idx].src}
+                  alt={images[idx].alt}
+                  className="absolute inset-0 w-full h-full object-contain bg-black"
+                />
+              )}
               <button
                 onClick={prev}
                 className="absolute left-3 top-1/2 -translate-y-1/2 h-12 w-12 rounded-full bg-white/90 text-neutral-800 shadow"
@@ -130,7 +148,7 @@ export default function Step3Carousel({ images = defaultSlides }) {
 }
 
 const defaultSlides = [
-  { src: step3ChatInput, alt: "채팅 입력 화면", badge: "프롬프트 입력" },
-  { src: step3Generating, alt: "생성 대기 화면", badge: "생성 대기" },
-  { src: step3ResultDrag, alt: "결과 드래그 화면", badge: "프리뷰로 드래그" },
+  { src: step3ChatInput, alt: "채팅 입력 화면", badge: "프롬프트 입력", padVertical: true },
+  { src: step3Generating, alt: "생성 대기 화면", badge: "생성 대기", padVertical: true },
+  { src: step3ResultDrag, alt: "결과 드래그 화면", badge: "프리뷰로 드래그", padVertical: false },
 ];
