@@ -14,9 +14,43 @@ from .oauth_instagram import (
 )
 from app.api.models.persona import get_user_personas as _get_user_personas
 from app.core.s3 import s3_enabled, presign_get_url
+from app.api.core.mysql import get_mysql_pool
+import aiomysql
+from datetime import datetime
 
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
+
+
+async def _ensure_posts_table(cur) -> None:
+    """Create ss_instagram_post table if missing. Ignore privilege errors."""
+    try:
+        await cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS ss_instagram_post (
+              media_id VARCHAR(100) PRIMARY KEY,
+              user_id INT NOT NULL,
+              user_persona_num INT NOT NULL,
+              ig_user_id VARCHAR(100) NOT NULL,
+              media_type VARCHAR(32) NULL,
+              media_product_type VARCHAR(64) NULL,
+              media_url VARCHAR(500) NULL,
+              thumbnail_url VARCHAR(500) NULL,
+              permalink VARCHAR(500) NULL,
+              caption TEXT NULL,
+              posted_at DATETIME NULL,
+              like_count INT DEFAULT 0,
+              comments_count INT DEFAULT 0,
+              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+              KEY idx_user_persona (user_id, user_persona_num),
+              KEY idx_user_posted (user_id, user_persona_num, posted_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """
+        )
+    except Exception:
+        # No CREATE privilege or other non-fatal error
+        pass
 
 
 async def _fetch_recent_media_and_comments(
@@ -95,74 +129,167 @@ async def _fetch_recent_media_and_comments(
 # ===== Instagram posts endpoints for MyPage =====
 @router.get("/posts")
 async def list_posts(request: Request, persona_num: Optional[int] = None, limit: int = 18):
-    """Return recent Instagram posts for the given persona.
+    """Return recently stored posts for persona from DB.
 
-    This is a lightweight passthrough to Meta Graph; results are not persisted.
+    Use /api/instagram/posts/sync to refresh cache from Graph.
     """
+    uid = _require_login(request)
+    if persona_num is None:
+        raise HTTPException(status_code=400, detail="persona_num_required")
+
+    items: List[Dict[str, Any]] = []
+    try:
+        pool = await get_mysql_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await _ensure_posts_table(cur)
+                await cur.execute(
+                    """
+                    SELECT media_id, media_type, media_product_type, media_url, thumbnail_url,
+                           permalink, caption, posted_at, like_count, comments_count
+                    FROM ss_instagram_post
+                    WHERE user_id=%s AND user_persona_num=%s
+                    ORDER BY (posted_at IS NULL) ASC, posted_at DESC, updated_at DESC
+                    LIMIT %s
+                    """,
+                    (int(uid), int(persona_num), int(limit)),
+                )
+                rows = await cur.fetchall() or []
+        for r in rows:
+            ts = r.get("posted_at")
+            if ts:
+                try:
+                    timestamp = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+                except Exception:
+                    timestamp = None
+            else:
+                timestamp = None
+            items.append(
+                {
+                    "id": r.get("media_id"),
+                    "media_type": r.get("media_type"),
+                    "media_url": r.get("media_url"),
+                    "thumbnail_url": r.get("thumbnail_url"),
+                    "permalink": r.get("permalink"),
+                    "caption": r.get("caption"),
+                    "timestamp": timestamp,
+                    "like_count": r.get("like_count") or 0,
+                    "comments_count": r.get("comments_count") or 0,
+                }
+            )
+        return {"ok": True, "items": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"posts_list_failed:{e}")
+
+
+@router.post("/posts/sync")
+async def sync_posts(request: Request, persona_num: Optional[int] = None, limit: int = 18, days: Optional[int] = None):
+    """Fetch recent posts from Graph and upsert into DB for this persona."""
     uid = _require_login(request)
     if persona_num is None:
         raise HTTPException(status_code=400, detail="persona_num_required")
 
     mapping = await _get_persona_instagram_mapping(int(uid), int(persona_num))
     if not mapping or not mapping.get("ig_user_id"):
-        # Not linked yet
-        return {"ok": True, "items": []}
+        return {"ok": True, "synced": 0}
     token = await _get_persona_token(int(uid), int(persona_num))
     if not token:
-        # Persona OAuth not completed
         raise HTTPException(status_code=401, detail="persona_oauth_required")
 
-    items: List[Dict[str, Any]] = []
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.get(
                 f"{IG_GRAPH}/{mapping['ig_user_id']}/media",
                 params={
                     "access_token": token,
-                    "fields": "id,media_type,media_url,thumbnail_url,permalink,timestamp,caption",
+                    "fields": "id,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,caption,like_count,comments_count",
                     "limit": max(1, int(limit)),
                 },
             )
         if r.status_code != 200:
-            # surface as HTTP error to UI
+            try:
+                body = r.json()
+                err = (body or {}).get("error") or {}
+                if err.get("code") == 190:
+                    raise HTTPException(status_code=401, detail="persona_oauth_required")
+            except HTTPException:
+                raise
+            except Exception:
+                pass
+            if r.status_code == 404:
+                return {"ok": True, "synced": 0}
             raise HTTPException(status_code=r.status_code, detail=r.text)
+
         data = (r.json() or {}).get("data") or []
-        for m in data:
-            if not m.get("id"):
-                continue
-            items.append(
-                {
-                    "id": m.get("id"),
-                    "media_type": m.get("media_type"),
-                    "media_url": m.get("media_url"),
-                    "thumbnail_url": m.get("thumbnail_url"),
-                    "permalink": m.get("permalink"),
-                    "timestamp": m.get("timestamp"),
-                    # counts are optional; default to 0 for UI
-                    "like_count": 0,
-                    "comments_count": 0,
-                }
-            )
-        return {"ok": True, "items": items}
+        if not data:
+            return {"ok": True, "synced": 0}
+
+        pool = await get_mysql_pool()
+        async with pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await _ensure_posts_table(cur)
+                upcnt = 0
+                for m in data:
+                    mid = m.get("id")
+                    if not mid:
+                        continue
+                    media_type = m.get("media_type")
+                    product_type = m.get("media_product_type")
+                    media_url = m.get("media_url")
+                    thumbnail_url = m.get("thumbnail_url")
+                    permalink = m.get("permalink")
+                    caption = m.get("caption")
+                    timestamp = m.get("timestamp")
+                    like_count = int(m.get("like_count") or 0)
+                    comments_count = int(m.get("comments_count") or 0)
+                    # Normalize timestamp to MySQL DATETIME string
+                    posted_at = None
+                    if isinstance(timestamp, str):
+                        # IG returns ISO 8601; MySQL accepts 'YYYY-MM-DD HH:MM:SS'
+                        try:
+                            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                            posted_at = dt.strftime("%Y-%m-%d %H:%M:%S")
+                        except Exception:
+                            posted_at = None
+                    try:
+                        await cur.execute(
+                            """
+                            INSERT INTO ss_instagram_post (
+                              media_id, user_id, user_persona_num, ig_user_id,
+                              media_type, media_product_type, media_url, thumbnail_url,
+                              permalink, caption, posted_at, like_count, comments_count
+                            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                            ON DUPLICATE KEY UPDATE
+                              media_type=VALUES(media_type),
+                              media_product_type=VALUES(media_product_type),
+                              media_url=VALUES(media_url),
+                              thumbnail_url=VALUES(thumbnail_url),
+                              permalink=VALUES(permalink),
+                              caption=VALUES(caption),
+                              posted_at=VALUES(posted_at),
+                              like_count=GREATEST(VALUES(like_count), like_count),
+                              comments_count=GREATEST(VALUES(comments_count), comments_count),
+                              updated_at=CURRENT_TIMESTAMP
+                            """,
+                            (
+                                str(mid), int(uid), int(persona_num), str(mapping["ig_user_id"]),
+                                media_type, product_type, media_url, thumbnail_url,
+                                permalink, caption, posted_at, like_count, comments_count,
+                            ),
+                        )
+                        upcnt += 1
+                    except Exception:
+                        # Continue on individual failure
+                        pass
+                try:
+                    await conn.commit()
+                except Exception:
+                    pass
+        return {"ok": True, "synced": upcnt}
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"posts_failed:{e}")
-
-
-@router.post("/posts/sync")
-async def sync_posts(request: Request, persona_num: Optional[int] = None, limit: int = 18, days: Optional[int] = None):
-    """Trigger a refresh of posts.
-
-    For now, this just hits the Graph and returns count; persistence can be added later.
-    """
-    # Reuse list_posts logic
-    res = await list_posts(request, persona_num=persona_num, limit=limit)
-    try:
-        count = len(res.get("items") or [])  # type: ignore
-    except Exception:
-        count = 0
-    return {"ok": True, "synced": count}
+        raise HTTPException(status_code=500, detail=f"posts_sync_failed:{e}")
 
 
 @router.get("/comments/overview")
