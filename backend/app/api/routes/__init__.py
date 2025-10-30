@@ -50,18 +50,14 @@ try:
 except Exception:
     pass
 
-"""
-주의: instagram 관련 일반 API(게시글/인사이트/게시)는 /api 접두사로만 노출하기 위해
-여기(router 집계)에서는 등록하지 않습니다. app.main에서 prefix="/api"로만 include합니다.
-- instagram_publish
-- instagram_comments
-- instagram_insights
-OAuth(redirect/callback)은 기존처럼 /oauth/instagram 경로로 유지합니다.
-"""
+try:
+    from .instagram_publish import router as ig_publish_router
+    router.include_router(ig_publish_router)
+except Exception:
+    pass
 
-# instagram_comments: app.main에서 /api 접두사로만 등록
-
-# instagram_insights: app.main에서 /api 접두사로만 등록
+# 정책: 인스타그램 관련 데이터 라우터는 /api 전용으로 노출
+# (app.main에서 prefix="/api"로 포함합니다)
 
 try:
     # chat 라우터는 전역(router)에는 등록하지 않습니다.

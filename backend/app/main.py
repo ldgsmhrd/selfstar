@@ -125,29 +125,27 @@ try:
 except Exception as e:
     logger.warning(f"No api_router found in app.api.routes: {e}")
 
-"""
-중요: 운영에서는 /api 접두사로만 Instagram/Chat을 노출한다.
-Nginx가 /api/instagram, /api/chat를 백엔드로 프록시하므로, 백엔드도 동일 접두사만 제공.
-"""
+# 중요 엔드포인트는 개별 포함도 시도하여, 일부 라우트 모듈 오류로 집계가 누락되어도 최소 동작 보장
 try:
     from app.api.routes.instagram_comments import router as ig_comments_router
+    # /api 접두사 경로로만 노출 (정책)
     app.include_router(ig_comments_router, prefix="/api")
-    logger.info("instagram_comments router registered under /api only")
+    logger.info("instagram_comments router registered explicitly under /api prefix")
 except Exception as e:
-    logger.warning(f"Failed to register instagram_comments router: {e}")
+    logger.warning(f"Failed to register instagram_comments router under /api: {e}")
 
 try:
     from app.api.routes.instagram_insights import router as ig_insights_router
     app.include_router(ig_insights_router, prefix="/api")
-    logger.info("instagram_insights router registered under /api only")
+    logger.info("instagram_insights router registered explicitly under /api prefix")
 except Exception as e:
-    logger.warning(f"Failed to register instagram_insights router: {e}")
+    logger.warning(f"Failed to register instagram_insights router under /api: {e}")
 
 # chat 라우터도 /api 접두사 경로를 병행 제공 (nginx 특수 매핑 미적용 환경 대비)
 try:
     from app.api.routes.chat import router as chat_router_direct
     app.include_router(chat_router_direct, prefix="/api")
-    logger.info("chat router registered under /api only")
+    logger.info("chat router additionally registered under /api prefix")
 except Exception as e:
     logger.warning(f"Failed to additionally register chat router under /api: {e}")
 
