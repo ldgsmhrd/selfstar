@@ -22,37 +22,6 @@ from datetime import datetime
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
 
-async def _ensure_posts_table(cur) -> None:
-    """Create ss_instagram_post table if missing. Ignore privilege errors."""
-    try:
-        await cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS ss_instagram_post (
-              media_id VARCHAR(100) PRIMARY KEY,
-              user_id INT NOT NULL,
-              user_persona_num INT NOT NULL,
-              ig_user_id VARCHAR(100) NOT NULL,
-              media_type VARCHAR(32) NULL,
-              media_product_type VARCHAR(64) NULL,
-              media_url VARCHAR(500) NULL,
-              thumbnail_url VARCHAR(500) NULL,
-              permalink VARCHAR(500) NULL,
-              caption TEXT NULL,
-              posted_at DATETIME NULL,
-              like_count INT DEFAULT 0,
-              comments_count INT DEFAULT 0,
-              created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-              updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-              KEY idx_user_persona (user_id, user_persona_num),
-              KEY idx_user_posted (user_id, user_persona_num, posted_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """
-        )
-    except Exception:
-        # No CREATE privilege or other non-fatal error
-        pass
-
-
 async def _fetch_recent_media_and_comments(
     client: httpx.AsyncClient,
     ig_user_id: str,
@@ -142,7 +111,6 @@ async def list_posts(request: Request, persona_num: Optional[int] = None, limit:
         pool = await get_mysql_pool()
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
-                await _ensure_posts_table(cur)
                 rows = []
                 try:
                     await cur.execute(
@@ -232,7 +200,6 @@ async def sync_posts(request: Request, persona_num: Optional[int] = None, limit:
         pool = await get_mysql_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
-                await _ensure_posts_table(cur)
                 upcnt = 0
                 for m in data:
                     mid = m.get("id")
