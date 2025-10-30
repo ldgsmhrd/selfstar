@@ -125,6 +125,21 @@ try:
 except Exception as e:
     logger.warning(f"No api_router found in app.api.routes: {e}")
 
+# 중요 엔드포인트는 개별 포함도 시도하여, 일부 라우트 모듈 오류로 집계가 누락되어도 최소 동작 보장
+try:
+    from app.api.routes.instagram_comments import router as ig_comments_router
+    app.include_router(ig_comments_router)
+    logger.info("instagram_comments router registered explicitly")
+except Exception as e:
+    logger.warning(f"Failed to register instagram_comments router explicitly: {e}")
+
+try:
+    from app.api.routes.instagram_insights import router as ig_insights_router
+    app.include_router(ig_insights_router)
+    logger.info("instagram_insights router registered explicitly")
+except Exception as e:
+    logger.warning(f"Failed to register instagram_insights router explicitly: {e}")
+
 # ===== Static mounts =====
 # media (기존 자산)
 _DEFAULT_MEDIA = os.path.join(os.path.dirname(__file__), "media")
