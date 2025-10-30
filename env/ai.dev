@@ -1,9 +1,0 @@
-# AI Serving development environment
-# Listening port
-PORT=8600
-
-# Development model configs
-# MODEL_ID=
-# HF_TOKEN=
-
-# Add any development-specific AI configurations here

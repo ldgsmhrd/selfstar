@@ -269,6 +269,7 @@ async def comments_overview(
     request: Request,
     media_limit: int = 5,
     comments_limit: int = 10,
+    exclude_seen: bool = True,
 ):
     """현재 로그인 사용자의 '연동된' 페르소나별 최근 댓글 개요를 반환.
 
@@ -303,6 +304,52 @@ async def comments_overview(
                 media_limit=media_limit,
                 comments_limit=comments_limit,
             )
+
+            # 선택적으로 '확인된(ack)' 알림은 제외
+            if exclude_seen and media:
+                try:
+                    # 댓글 ID 수집
+                    all_comment_ids: List[str] = []
+                    for m in media:
+                        for c in m.get("comments") or []:
+                            cid = c.get("id")
+                            if isinstance(cid, str):
+                                all_comment_ids.append(cid)
+                    # 없으면 건너뜀
+                    if all_comment_ids:
+                        # IN 절은 너무 길어지지 않도록 100개 단위로 분할
+                        seen_ids: set[str] = set()
+                        pool = await get_mysql_pool()
+                        chunks = [all_comment_ids[i:i+100] for i in range(0, len(all_comment_ids), 100)]
+                        async with pool.acquire() as conn:
+                            async with conn.cursor(aiomysql.DictCursor) as cur:
+                                for chunk in chunks:
+                                    ph = ",".join(["%s"] * len(chunk))
+                                    try:
+                                        await cur.execute(
+                                            f"""
+                                            SELECT external_id
+                                            FROM ss_instagram_event_seen
+                                            WHERE external_id IN ({ph})
+                                            """,
+                                            chunk,
+                                        )
+                                        for r in (await cur.fetchall()) or []:
+                                            sid = r.get("external_id")
+                                            if isinstance(sid, str):
+                                                seen_ids.add(sid)
+                                    except Exception:
+                                        # 테이블 미존재 등은 무시하고 전체 반환
+                                        seen_ids = set()
+                                        break
+                        if seen_ids:
+                            # 각 미디어의 comments에서 seen_ids 제거
+                            for m in media:
+                                cs = m.get("comments") or []
+                                m["comments"] = [c for c in cs if c.get("id") not in seen_ids]
+                except Exception:
+                    # 필터링 실패 시 원본 반환(치명적 아님)
+                    pass
 
             # 표시용 이름/이미지
             params = p.get("persona_parameters") or {}

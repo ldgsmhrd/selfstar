@@ -69,6 +69,18 @@ except Exception:
     pass
 
 try:
+    from .instagram_notifications import router as ig_notif_router
+    router.include_router(ig_notif_router)
+except Exception:
+    pass
+
+try:
+    from .instagram_reply import router as ig_reply_router
+    router.include_router(ig_reply_router)
+except Exception:
+    pass
+
+try:
     from .chat import router as chat_router
     router.include_router(chat_router)
 except Exception:

@@ -1,3 +1,14 @@
+# Ignore local development env files
+env/*.dev
+
+# Common OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+*.log
+node_modules/
+__pycache__/
+*.pyc
 # Global ignores for repo
 # OS/editor
 .DS_Store
