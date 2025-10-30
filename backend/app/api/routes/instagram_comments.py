@@ -1,9 +1,10 @@
 from __future__ import annotations
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 import httpx
+import logging
 
 # 내부 OAuth/연동 유틸 재사용
 from .oauth_instagram import (
@@ -20,6 +21,7 @@ from datetime import datetime
 
 
 router = APIRouter(prefix="/api/instagram", tags=["instagram"])
+log = logging.getLogger("instagram_comments")
 
 
 async def _fetch_recent_media_and_comments(
@@ -28,7 +30,8 @@ async def _fetch_recent_media_and_comments(
     access_token: str,
     media_limit: int = 5,
     comments_limit: int = 10,
-) -> List[Dict[str, Any]]:
+    return_debug: bool = False,
+) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
     """지정 IG 사용자에 대한 최근 미디어와 각 미디어의 최신 댓글 수집.
 
     반환 items 요소:
@@ -47,9 +50,17 @@ async def _fetch_recent_media_and_comments(
             "limit": max(1, int(media_limit)),
         },
     )
+    debug_info: Optional[Dict[str, Any]] = None
     if r.status_code != 200:
-        # 미디어 접근 불가 시 빈 배열
-        return []
+        # 미디어 접근 불가 — 상태/본문 로깅 및 디버그 수집
+        try:
+            body = r.json()
+        except Exception:
+            body = {"text": r.text}
+        log.warning("IG media fetch failed: status=%s body=%s", r.status_code, body)
+        if return_debug:
+            debug_info = {"media_status": r.status_code, "media_body": body}
+        return ([], debug_info)
     data = (r.json() or {}).get("data") or []
 
     for m in data:
@@ -79,6 +90,20 @@ async def _fetch_recent_media_and_comments(
         comments: List[Dict[str, Any]] = []
         if cr.status_code == 200:
             comments = (cr.json() or {}).get("data") or []
+        else:
+            try:
+                cbody = cr.json()
+            except Exception:
+                cbody = {"text": cr.text}
+            log.warning("IG comments fetch failed: media_id=%s status=%s body=%s", mid, cr.status_code, cbody)
+            if return_debug:
+                if debug_info is None:
+                    debug_info = {}
+                debug_info.setdefault("comments", []).append({
+                    "media_id": mid,
+                    "status": cr.status_code,
+                    "body": cbody,
+                })
         # 정규화해서 담기
         item["comments"] = [
             {
@@ -92,7 +117,7 @@ async def _fetch_recent_media_and_comments(
             if c.get("id")
         ]
         media_items.append(item)
-    return media_items
+    return (media_items, debug_info)
 
 
 # ===== Instagram posts endpoints for MyPage =====
@@ -270,6 +295,7 @@ async def comments_overview(
     media_limit: int = 5,
     comments_limit: int = 10,
     exclude_seen: bool = True,
+    debug: bool = False,
 ):
     """현재 로그인 사용자의 '연동된' 페르소나별 최근 댓글 개요를 반환.
 
@@ -297,12 +323,13 @@ async def comments_overview(
             if not token:
                 continue
 
-            media = await _fetch_recent_media_and_comments(
+            media, dbg = await _fetch_recent_media_and_comments(
                 client,
                 mapping["ig_user_id"],
                 token,
                 media_limit=media_limit,
                 comments_limit=comments_limit,
+                return_debug=bool(debug),
             )
 
             # 선택적으로 '확인된(ack)' 알림은 제외
@@ -388,7 +415,83 @@ async def comments_overview(
                     "ig_user_id": mapping.get("ig_user_id"),
                     "ig_username": mapping.get("ig_username"),
                     "items": media,
+                    **({"debug": dbg} if debug and dbg is not None else {}),
                 }
             )
 
     return {"ok": True, "personas": results}
+
+
+@router.get("/comments/raw")
+async def debug_comments_raw(
+    request: Request,
+    persona_num: int,
+    media_limit: int = 1,
+    comments_limit: int = 10,
+):
+    """Raw Graph proxy for debugging comment fetch failures.
+
+    - Does not touch DB and does not filter; returns raw Graph status/body.
+    - Use this to see exact error payloads from Meta Graph API.
+    """
+    uid = _require_login(request)
+
+    mapping = await _get_persona_instagram_mapping(int(uid), int(persona_num))
+    if not mapping or not mapping.get("ig_user_id"):
+        raise HTTPException(status_code=400, detail="persona_not_linked")
+    token = await _get_persona_token(int(uid), int(persona_num))
+    if not token:
+        raise HTTPException(status_code=401, detail="persona_oauth_required")
+
+    out: Dict[str, Any] = {
+        "ok": True,
+        "persona_num": int(persona_num),
+        "ig_user_id": mapping.get("ig_user_id"),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            mr = await client.get(
+                f"{IG_GRAPH}/{mapping['ig_user_id']}/media",
+                params={
+                    "access_token": token,
+                    "fields": "id,caption,permalink,media_type,media_url,thumbnail_url,timestamp",
+                    "limit": max(1, int(media_limit)),
+                },
+            )
+            try:
+                media_body = mr.json()
+            except Exception:
+                media_body = {"text": mr.text}
+            out["media"] = {"status": mr.status_code, "body": media_body}
+
+            comments_raw: List[Dict[str, Any]] = []
+            if mr.status_code == 200:
+                data = (media_body or {}).get("data") or []
+                for m in data:
+                    mid = m.get("id")
+                    if not mid:
+                        continue
+                    cr = await client.get(
+                        f"{IG_GRAPH}/{mid}/comments",
+                        params={
+                            "access_token": token,
+                            "fields": "id,text,username,timestamp,like_count",
+                            "limit": max(1, int(comments_limit)),
+                        },
+                    )
+                    try:
+                        cbody = cr.json()
+                    except Exception:
+                        cbody = {"text": cr.text}
+                    comments_raw.append({
+                        "media_id": mid,
+                        "status": cr.status_code,
+                        "body": cbody,
+                    })
+            out["comments"] = comments_raw
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"comments_raw_failed:{e}")

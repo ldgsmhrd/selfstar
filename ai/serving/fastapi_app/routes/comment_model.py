@@ -5,6 +5,7 @@ from typing import List
 
 from google import genai
 from google.genai import types
+import httpx
 
 from ai.serving.fastapi_app.schemas.comment import CommentReplyRequest, CommentReplyResponse
 
@@ -28,8 +29,8 @@ GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.5-flash")
 
 
 def _build_comment_reply_prompt(req: CommentReplyRequest) -> str:
-    # Derived from ai/notebooks/comment_model.ipynb (Korean prompt),
-    # with small safety/format clarifications and output-only requirement.
+    # Notebook-style prompt: keep the same structure as in the demo notebook
+    # and only substitute the four fields.
     post_img = req.post_img or ""
     post = req.post or ""
     personality = req.personality or ""
@@ -57,7 +58,7 @@ post_img="{post_img}"
 post="{post}"
 personality="{personality}"
 text="{text}"
-output = """"".strip()
+output = """.strip()
 
 
 @router.post("/comment/reply", response_model=CommentReplyResponse)
@@ -70,9 +71,10 @@ async def generate_comment_reply(req: CommentReplyRequest):
     prompt = _build_comment_reply_prompt(req)
 
     try:
+        # Mirror the notebook pattern: pass the prompt string and use resp.text
         resp = client.models.generate_content(
             model=GEMINI_TEXT_MODEL,
-            contents=[types.Part.from_text(text=prompt)],
+            contents=prompt,
             config=types.GenerateContentConfig(
                 response_modalities=[types.Modality.TEXT],
                 candidate_count=1,
@@ -81,12 +83,19 @@ async def generate_comment_reply(req: CommentReplyRequest):
                 max_output_tokens=64,
             ),
         )
-        reply = ""
-        for c in getattr(resp, "candidates", []) or []:
-            for p in getattr(c.content, "parts", []) or []:
-                if getattr(p, "text", None):
-                    reply += p.text
-        reply = (reply or "").strip()
+        reply = (getattr(resp, "text", "") or "").strip()
+        if not reply:
+            # Some library versions don't populate .text; extract from candidates
+            buf = []
+            for c in getattr(resp, "candidates", []) or []:
+                content = getattr(c, "content", None)
+                if not content:
+                    continue
+                for p in getattr(content, "parts", []) or []:
+                    t = getattr(p, "text", "")
+                    if t:
+                        buf.append(t)
+            reply = "\n".join(buf).strip()
         if not reply:
             raise RuntimeError("empty_reply")
         # Post-process: ensure we didn't leak format markers
@@ -100,4 +109,38 @@ async def generate_comment_reply(req: CommentReplyRequest):
         raise
     except Exception as e:
         log.error("/comment/reply failed: %s", e)
-        raise HTTPException(status_code=500, detail={"error": "comment_reply_failed", "message": str(e)})
+        # Fallback to direct REST call to Gemini (still model-backed, no placeholders)
+        try:
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise RuntimeError("missing_api_key")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_TEXT_MODEL}:generateContent?key={api_key}"
+            payload = {
+                "contents": [
+                    {
+                        "parts": [{"text": prompt}]
+                    }
+                ]
+            }
+            with httpx.Client(timeout=20) as client2:
+                r = client2.post(url, json=payload)
+            if r.status_code != 200:
+                raise RuntimeError(f"rest_status_{r.status_code}:{r.text[:200]}")
+            data = r.json() or {}
+            reply = ""
+            for cand in (data.get("candidates") or []):
+                content = cand.get("content") or {}
+                for part in (content.get("parts") or []):
+                    t = part.get("text") or ""
+                    if t:
+                        reply = (reply + ("\n" if reply else "") + t).strip()
+            if not reply:
+                raise RuntimeError("empty_reply_rest")
+            if reply.lower().startswith("output"):
+                idx = reply.find("=")
+                if idx != -1:
+                    reply = reply[idx+1:].strip().strip('"')
+            return CommentReplyResponse(ok=True, reply=reply)
+        except Exception as e2:
+            log.error("/comment/reply rest fallback failed: %s", e2)
+            raise HTTPException(status_code=500, detail={"error": "comment_reply_failed", "message": str(e)})
