@@ -129,16 +129,27 @@ except Exception as e:
 try:
     from app.api.routes.instagram_comments import router as ig_comments_router
     app.include_router(ig_comments_router)
-    logger.info("instagram_comments router registered explicitly")
+    # /api 접두사 경로도 함께 노출하여 Nginx 매핑 유무와 무관하게 접근 가능
+    app.include_router(ig_comments_router, prefix="/api")
+    logger.info("instagram_comments router registered explicitly (with / and /api prefixes)")
 except Exception as e:
     logger.warning(f"Failed to register instagram_comments router explicitly: {e}")
 
 try:
     from app.api.routes.instagram_insights import router as ig_insights_router
     app.include_router(ig_insights_router)
-    logger.info("instagram_insights router registered explicitly")
+    app.include_router(ig_insights_router, prefix="/api")
+    logger.info("instagram_insights router registered explicitly (with / and /api prefixes)")
 except Exception as e:
     logger.warning(f"Failed to register instagram_insights router explicitly: {e}")
+
+# chat 라우터도 /api 접두사 경로를 병행 제공 (nginx 특수 매핑 미적용 환경 대비)
+try:
+    from app.api.routes.chat import router as chat_router_direct
+    app.include_router(chat_router_direct, prefix="/api")
+    logger.info("chat router additionally registered under /api prefix")
+except Exception as e:
+    logger.warning(f"Failed to additionally register chat router under /api: {e}")
 
 # ===== Static mounts =====
 # media (기존 자산)
