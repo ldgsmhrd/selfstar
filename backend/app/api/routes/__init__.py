@@ -56,13 +56,20 @@ try:
 except Exception:
     pass
 
-# 정책: 인스타그램 관련 데이터 라우터는 /api 전용으로 노출
-# (app.main에서 prefix="/api"로 포함합니다)
+try:
+    from .instagram_comments import router as ig_comments_router
+    router.include_router(ig_comments_router)
+except Exception:
+    pass
 
 try:
-    # chat 라우터는 전역(router)에는 등록하지 않습니다.
-    # 백엔드 엔트리(app.main)에서 '/api' 접두사로만 노출하여
-    # 일관되게 /api/chat 경로만 사용하도록 강제합니다.
+    from .instagram_insights import router as ig_insights_router
+    router.include_router(ig_insights_router)
+except Exception:
     pass
+
+try:
+    from .chat import router as chat_router
+    router.include_router(chat_router)
 except Exception:
     pass

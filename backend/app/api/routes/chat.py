@@ -10,7 +10,7 @@ from app.api.core.mysql import get_mysql_pool
 from app.core.s3 import s3_enabled, presign_get_url, put_data_uri
 
 # 파트: 채팅/이미지 생성 API
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(prefix="/api/chat", tags=["chat"])
 log = logging.getLogger("chat")
 
 

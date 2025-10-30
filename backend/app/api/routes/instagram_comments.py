@@ -19,7 +19,7 @@ import aiomysql
 from datetime import datetime
 
 
-router = APIRouter(prefix="/instagram", tags=["instagram"])
+router = APIRouter(prefix="/api/instagram", tags=["instagram"])
 
 
 async def _fetch_recent_media_and_comments(
