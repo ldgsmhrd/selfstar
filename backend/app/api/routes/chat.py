@@ -382,8 +382,9 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
             })
         return {"ok": True, "items": items}
     except Exception as e:
-        log.exception("failed to list gallery: %s", e)
-        raise HTTPException(status_code=500, detail="gallery_failed")
+        # 프로덕션 안전: 갤러리 조회에 실패해도 빈 목록 반환하여 UI가 붕괴되지 않도록 함
+        log.warning("failed to list gallery; returning empty list: %s", e)
+        return {"ok": True, "items": []}
 
 
 @router.get("/image")
