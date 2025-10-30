@@ -380,8 +380,9 @@ async def list_gallery(request: Request, persona_num: Optional[int] = None, limi
                             )
                         rows = await cur.fetchall() or []
                     except Exception as _se2:
-                        log.exception("failed to list gallery (both schemas): %s / %s", _se, _se2)
-                        raise
+                        # 운영 DB 권한/스키마 문제로 테이블이 없거나 조회 실패 시 빈 목록 반환
+                        log.warning("gallery select failed on both schemas; returning empty. err1=%s err2=%s", _se, _se2)
+                        rows = []
         for r in rows:
             key = r.get("img_key") or ""
             url = key

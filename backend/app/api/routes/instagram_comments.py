@@ -143,18 +143,23 @@ async def list_posts(request: Request, persona_num: Optional[int] = None, limit:
         async with pool.acquire() as conn:
             async with conn.cursor(aiomysql.DictCursor) as cur:
                 await _ensure_posts_table(cur)
-                await cur.execute(
-                    """
-                    SELECT media_id, media_type, media_product_type, media_url, thumbnail_url,
-                           permalink, caption, posted_at, like_count, comments_count
-                    FROM ss_instagram_post
-                    WHERE user_id=%s AND user_persona_num=%s
-                    ORDER BY (posted_at IS NULL) ASC, posted_at DESC, updated_at DESC
-                    LIMIT %s
-                    """,
-                    (int(uid), int(persona_num), int(limit)),
-                )
-                rows = await cur.fetchall() or []
+                rows = []
+                try:
+                    await cur.execute(
+                        """
+                        SELECT media_id, media_type, media_product_type, media_url, thumbnail_url,
+                               permalink, caption, posted_at, like_count, comments_count
+                        FROM ss_instagram_post
+                        WHERE user_id=%s AND user_persona_num=%s
+                        ORDER BY (posted_at IS NULL) ASC, posted_at DESC, updated_at DESC
+                        LIMIT %s
+                        """,
+                        (int(uid), int(persona_num), int(limit)),
+                    )
+                    rows = await cur.fetchall() or []
+                except Exception as _e:
+                    # 테이블 미존재 또는 권한 문제 시 빈 배열 반환(프로덕션 안전)
+                    rows = []
         for r in rows:
             ts = r.get("posted_at")
             if ts:
