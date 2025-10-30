@@ -1,3 +1,0 @@
-# Frontend (Vite) development environment
-# API Base URL for development (through nginx proxy)
-VITE_API_BASE=http://localhost

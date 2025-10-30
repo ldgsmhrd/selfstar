@@ -56,7 +56,9 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(images.router)
 app.include_router(persona.router)
-app.include_router(chat_route.router, prefix="/api")
+app.include_router(chat_route.router)
+
+
 
 if HAS_POSTS:
     app.include_router(posts.router)      # posts.router 안에 prefix가 없으면: app.include_router(posts.router, prefix="/posts")

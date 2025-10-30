@@ -30,6 +30,14 @@ app.include_router(image_router)
 if _HAS_CHAT:
 	app.include_router(chat_router)
 
+# Optional comment model router
+try:
+	from ai.serving.fastapi_app.routes.comment_model import router as comment_router
+	app.include_router(comment_router)
+except Exception as e:
+	import logging
+	logging.getLogger("ai-main").error("comment router import failed: %s", e)
+
 @app.get("/__routes")
 def __routes():
 	# quick route list for debugging
