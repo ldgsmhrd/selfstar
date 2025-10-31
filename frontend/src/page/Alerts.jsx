@@ -306,7 +306,7 @@ function PersonaCard({ persona, onAutoReply, onBulkDraft, sending }) {
         </div>
         <div className="flex items-center gap-2">
           <button
-            className="px-2.5 py-1.5 text-xs rounded-full border bg-white hover:bg-slate-100 text-slate-700"
+            className="btn-soft-primary text-xs px-3 py-1.5 disabled:opacity-60 whitespace-nowrap"
             title="이 프로필의 모든 댓글에 자동 답장을 한 번에 생성하고 등록합니다"
             onClick={() => onBulkDraft?.(persona)}
           >
@@ -372,7 +372,7 @@ function MediaBlock({ media, persona_num, onAutoReply, sending }) {
               <div className="col-span-2 text-xs text-slate-500 text-right flex flex-col items-end gap-2">
                 <div>{formatTime(c.timestamp)}</div>
                 <button
-                  className="px-2 py-1 rounded-full border bg-white hover:bg-slate-50 text-slate-700 text-[11px]"
+                  className="btn-soft-primary text-[11px] px-2.5 py-1.5 disabled:opacity-60 whitespace-nowrap"
                   onClick={() => onAutoReply?.({ persona_num, comment_id: c.id, text: c.text, media })}
                   disabled={sending === c.id}
                   title="AI 기본 응답으로 자동 답글"

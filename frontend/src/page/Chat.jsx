@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 // removed hashtags UI; badge no longer needed
 import { API_BASE } from "@/api/client";
@@ -45,12 +44,13 @@ export default function Chat() {
   ]);
 
   // options/inputs
-  const [lockedFace, setLockedFace] = useState(true);
   const [prompt, setPrompt] = useState("패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈");
   const [isGenerating, setIsGenerating] = useState(false);
   // Multi-image preview state with carousel controls
   const [previewImages, setPreviewImages] = useState([]); // array of data URIs/URLs
   const [previewIndex, setPreviewIndex] = useState(0);
+  // 마지막 생성 이미지를 숨김 스타일 참조로 보관(프리뷰로 자동 이동하지 않음)
+  const [lastStyleImage, setLastStyleImage] = useState(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [showPreviewHint, setShowPreviewHint] = useState(false);
   // Refs and state for fly-to-preview animation
@@ -60,10 +60,16 @@ export default function Chat() {
   const [flight, setFlight] = useState(null); // { img, from:{x,y,w,h}, to:{x,y,w,h}, started:boolean }
   const [vibe, setVibe] = useState("insta");
   const [lsSessionId, setLsSessionId] = useState(null);
-  // Explicit UI toggle for using the previous image as a style reference (outfit transfer)
-  const [usePrevAsStyle, setUsePrevAsStyle] = useState(false);
 
   const currentPreview = previewImages.length ? previewImages[Math.min(previewIndex, previewImages.length - 1)] : null;
+
+  // 간단한 의도 감지: 사용자가 "다른 옷"을 요청하는지 판별
+  const wantsDifferentOutfit = (text) => {
+    const t = (text || "").toLowerCase();
+    const ko = /(다른\s*옷|옷\s*바꿔|옷\s*변경|스타일\s*바꿔|코디\s*바꿔)/;
+    const en = /(different\s*(outfit|clothes)|change\s*(outfit|clothes)|new\s*(outfit|look))/i;
+    return ko.test(text || "") || en.test(t);
+  };
 
   const addToPreview = (uri) => {
     if (!uri || typeof uri !== "string") return;
@@ -225,17 +231,22 @@ export default function Chat() {
       { id: waitId, role: "assistant", text: "이미지를 생성 중입니다…", ts: Date.now() },
     ]);
     try {
-      // Strengthen instruction when outfit toggle is on
+      // Enforce keeping the same outfit only when a style reference is present AND the user didn't ask to change clothes
       const styleLockNote = "Keep the exact same outfit from the style reference image. Do not change garment category, color, material, pattern, length, silhouette, or layers.";
       const instaAspectNote = "Output a single vertical image strictly in 4:5 aspect ratio (portrait for Instagram feed). Aim for approximately 1080x1350 resolution. Fill the frame; no borders or letterboxing.";
+      const changeOutfit = wantsDifferentOutfit(prompt);
+      const styleSource = !changeOutfit ? (currentPreview || lastStyleImage) : null;
+      const userText = `${prompt}\n[ASPECT] ${instaAspectNote}` + (styleSource
+        ? `\n[STYLE_ENFORCE] ${styleLockNote}`
+        : `\n[STYLE_RESET] User requested different outfit — ignore any outfit/style references if present.`);
       const payload = {
         persona_num: current.num,
-        user_text: `${prompt}\n[ASPECT] ${instaAspectNote}` + (usePrevAsStyle ? `\n[STYLE_ENFORCE] ${styleLockNote}` : ""),
+        user_text: userText,
         ls_session_id: lsSessionId,
       };
-      // If toggle is on and we have a current preview, attach it as a style reference to preserve outfit
-      if (usePrevAsStyle && currentPreview) {
-        payload.style_img = currentPreview;
+      // 스타일 참조 이미지 선택(프리뷰가 우선, 없으면 마지막 생성 이미지)
+      if (styleSource) {
+        payload.style_img = styleSource;
       }
       console.log("[Chat] POST /chat/image ->", payload);
       const res = await fetch(`${API_BASE}/api/chat/image`, {
@@ -255,7 +266,9 @@ export default function Chat() {
             { id: id + 1, role: "assistant", text: "이미지를 생성했어요.", image: data.image, ts: Date.now() },
           ];
         });
-        // 첫 생성이고 프리뷰가 비어있다면 드래그-앤-드롭 힌트 표시
+        // 다음 요청을 위한 숨김 스타일 참조 갱신(사용자가 "다른 옷"을 요청한 경우에는 체인 끊기)
+        setLastStyleImage(changeOutfit ? null : data.image);
+        // 자동 이동 금지: 사용자가 필요 시 프리뷰로 직접 옮길 수 있도록 힌트만 표시
         setTimeout(() => {
           if (previewImages.length === 0) setShowPreviewHint(true);
         }, 150);
@@ -349,8 +362,8 @@ export default function Chat() {
       setPreviewImages([]);
       setPreviewIndex(0);
       setShowPreviewHint(false);
-      // start a new session only now
-      (async () => { await startSession(); })();
+      // end previous session (if any) and start a new session now
+      (async () => { await endSession(); await startSession(); })();
     };
     window.addEventListener("persona-created", onPersonaCreated);
     window.addEventListener("persona-chosen", onPersonaChosen);
@@ -392,7 +405,7 @@ export default function Chat() {
             <div className="text-sm font-semibold leading-none">{current.name} · Chat Studio</div>
             <div className="text-xs text-neutral-500"></div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { setAskProfile(true); setProfileRefresh((v) => v + 1); }}>
+          <Button variant="outline" size="sm" onClick={() => { setAskProfile(true); try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch (e) { /* noop */ } }}>
             프로필 선택
           </Button>
         </div>
@@ -450,15 +463,7 @@ export default function Chat() {
         {/* Composer */}
         <div className="px-4 py-3 border-t bg-white/90 sticky bottom-0 z-10">
           <div className="flex flex-wrap items-center gap-3 mb-2">
-            <div className="flex items-center gap-2">
-              <Switch id="face" checked={lockedFace} onCheckedChange={setLockedFace} />
-              <Label htmlFor="face" className="text-xs">얼굴 고정</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch id="keep-style" checked={usePrevAsStyle} onCheckedChange={setUsePrevAsStyle} disabled={!currentPreview} />
-              <Label htmlFor="keep-style" className="text-xs">이전 옷 적용</Label>
-            </div>
-            {/* 비율 선택 제거 요청에 따라 UI 숨김 */}
+            {/* 얼굴 고정/이전 옷 토글 제거: 항상 자동 적용 */}
             <Button className="ml-auto gap-2" onClick={generate} disabled={isGenerating}>
               {isGenerating ? <Loader2 className="size-4 animate-spin" /> : <ImageIcon className="size-4" />}
               {isGenerating ? "생성 중" : "이미지 생성"}
