@@ -19,6 +19,8 @@ from app.api.routes import auth
 from app.api.routes import images
 from app.api.routes import persona
 from app.api.routes import chat as chat_route
+from app.api.routes import files as files_route
+from app.api.routes import instagram_publish as ig_publish_route
 # posts 라우터가 있을 수도 없을 수도 있으니, 존재하면만 추가
 try:
     from app.api.routes import posts  # posts.router 내부에 prefix가 있으면 main에서는 붙이지 않음
@@ -57,6 +59,9 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(images.router)
 app.include_router(persona.router)
 app.include_router(chat_route.router)
+# Ensure utility and Instagram publish routes are mounted
+app.include_router(files_route.router)
+app.include_router(ig_publish_route.router)
 
 
 

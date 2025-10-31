@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 
 // API base: prefer Vite proxy; fallback to empty string
 const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env)
@@ -259,7 +259,7 @@ export default function Alerts() {
             </div>
             <div className="p-5 overflow-auto">
               <div className="space-y-4">
-                {bulk.entries.map((e, idx) => (
+                {bulk.entries.map((e) => (
                   <div key={e.comment_id} className="rounded-lg border p-3">
                     <div className="text-xs text-slate-500 mb-1">댓글</div>
                     <div className="text-sm text-slate-800 break-words mb-2">{e.text}</div>

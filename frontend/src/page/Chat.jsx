@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+// eslint-disable-next-line no-unused-vars
 import { motion } from "framer-motion";
-import ProfileSelect from "./ProfileSelect.jsx";
 import { Image as ImageIcon, Loader2, MessageSquare, User, ChevronsRight, ChevronLeft, ChevronRight, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,7 +13,7 @@ import { API_BASE } from "@/api/client";
 
 // Helpers
 // Temporary: return empty caption so the UI shows a blank space
-const mockCaption = (prompt, vibe) => "";
+const mockCaption = () => "";
 
 const mockHashtags = (prompt) => {
   const words = (prompt || "패션쇼 블랙 드레스 런웨이 감도").split(/\s+/);
@@ -30,7 +29,6 @@ const mockHashtags = (prompt) => {
 const avatarFromName = (name) => `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(name || "influencer")}`;
 
 export default function Chat() {
-  const navigate = useNavigate();
   // Scroll handling for chat messages
   const messagesEndRef = useRef(null);
   const [current, setCurrent] = useState(null);
@@ -56,8 +54,7 @@ export default function Chat() {
   // Refs and state for fly-to-preview animation
   const imgRefs = useRef(new Map()); // messageId -> HTMLImageElement
   const previewDropRef = useRef(null);
-  const pendingFlightRef = useRef(null); // { messageId, img }
-  const [flight, setFlight] = useState(null); // { img, from:{x,y,w,h}, to:{x,y,w,h}, started:boolean }
+  // Removed fly-to-preview animation; no auto-move
   const [vibe, setVibe] = useState("insta");
   const [lsSessionId, setLsSessionId] = useState(null);
 
@@ -95,19 +92,15 @@ export default function Chat() {
   // payload: { image: dataURI|/files/상대경로|http(s)URL, persona_num? }
   // 반환: { ok, url(절대), path? }
   const ensurePublicUrl = async (img) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/files/ensure_public`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ image: img, persona_num: current?.num }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.ok || !data?.url) throw new Error(typeof data?.detail === "string" ? data.detail : JSON.stringify(data));
-      return data.url;
-    } catch (e) {
-      throw e;
-    }
+    const res = await fetch(`${API_BASE}/api/files/ensure_public`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ image: img, persona_num: current?.num }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok || !data?.url) throw new Error(typeof data?.detail === "string" ? data.detail : JSON.stringify(data));
+    return data.url;
   };
 
   // 엔드포인트: POST /instagram/publish
@@ -165,25 +158,12 @@ export default function Chat() {
       if (uri && /^(data:|https?:)/i.test(uri)) {
         addToPreview(uri.trim());
       }
-    } catch {}
+    } catch (err) {
+      console.debug("[Chat] drop parse error", err);
+    }
   };
 
-  // Trigger a flying animation from the new chat image to the preview dropzone
-  const triggerFlight = (messageId, img) => {
-    pendingFlightRef.current = { messageId, img };
-    // Ensure the message image is in the DOM before measuring
-    requestAnimationFrame(() => {
-      const srcEl = imgRefs.current.get(messageId);
-      const dstEl = previewDropRef.current;
-      if (!srcEl || !dstEl) return;
-      const s = srcEl.getBoundingClientRect();
-      const d = dstEl.getBoundingClientRect();
-      const from = { x: s.left, y: s.top, w: s.width, h: s.height };
-      const to = { x: d.left, y: d.top, w: d.width, h: d.height };
-      setFlight({ img, from, to, started: false });
-      requestAnimationFrame(() => setFlight((f) => (f ? { ...f, started: true } : f)));
-    });
-  };
+  // Removed auto fly-to-preview animation (manual drag or double-click instead)
 
   // Auto-scroll to bottom whenever messages update
   useEffect(() => {
@@ -192,7 +172,9 @@ export default function Chat() {
         if (messagesEndRef.current) {
           messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
         }
-      } catch {}
+      } catch (err) {
+        console.debug("[Chat] scrollIntoView failed", err);
+      }
     });
     return () => cancelAnimationFrame(id);
   }, [messages]);
@@ -203,7 +185,9 @@ export default function Chat() {
       if (messagesEndRef.current) {
         messagesEndRef.current.scrollIntoView({ behavior: "auto", block: "end" });
       }
-    } catch {}
+    } catch (err) {
+      console.debug("[Chat] initial scrollIntoView failed", err);
+    }
   }, []);
 
   const copy = async (text) => {
@@ -295,33 +279,26 @@ export default function Chat() {
   // 힌트 자동 숨김: 프리뷰가 채워지면, 또는 일정 시간 경과 시
   useEffect(() => {
     if (previewImages.length > 0 && showPreviewHint) setShowPreviewHint(false);
-  }, [previewImages.length]);
+  }, [previewImages.length, showPreviewHint]);
   useEffect(() => {
     if (!showPreviewHint) return;
     const t = setTimeout(() => setShowPreviewHint(false), 8000);
     return () => clearTimeout(t);
   }, [showPreviewHint]);
 
-  // After flight animation ends, just clear the overlay (do NOT auto-add to preview)
-  useEffect(() => {
-    if (!flight || !flight.started) return;
-    const t = setTimeout(() => {
-      setFlight(null);
-      // Keep or show the hint so user drags the image themselves
-      if (previewImages.length === 0) setShowPreviewHint(true);
-    }, 480);
-    return () => clearTimeout(t);
-  }, [flight?.started, previewImages.length]);
+  // Removed: flight animation cleanup (no auto-move to preview)
 
   // Start/end LangSmith session helpers
-  const startSession = async () => {
+  const startSession = React.useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/chat/session/start`, { method: "POST", credentials: "include" });
       const data = await res.json().catch(() => ({}));
       if (data?.ok && data?.ls_session_id) setLsSessionId(data.ls_session_id);
-    } catch { /* noop */ }
-  };
-  const endSession = async () => {
+    } catch (err) {
+      console.debug("[Chat] startSession failed", err);
+    }
+  }, []);
+  const endSession = React.useCallback(async () => {
     if (!lsSessionId) return;
     try {
       await fetch(`${API_BASE}/api/chat/session/end`, {
@@ -330,13 +307,14 @@ export default function Chat() {
         credentials: "include",
         body: JSON.stringify({ ls_session_id: lsSessionId }),
       });
-    } catch { /* noop */ }
-  };
+    } catch (err) {
+      console.debug("[Chat] endSession failed", err);
+    }
+  }, [lsSessionId]);
   // End session on unmount (session starts when persona is chosen)
   useEffect(() => {
     return () => { endSession(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [endSession]);
 
   // Listen for external open-profile-select and persona events (App coordinates the global modal)
   useEffect(() => {
@@ -346,7 +324,7 @@ export default function Chat() {
     };
     window.addEventListener("open-profile-select", onOpenProfileSelect);
     // When a new persona is created, just open selector (no auto-pick)
-    const onPersonaCreated = (e) => {
+    const onPersonaCreated = () => {
       setAskProfile(true);
       setCurrent(null);
     };
@@ -372,13 +350,13 @@ export default function Chat() {
       window.removeEventListener("persona-created", onPersonaCreated);
       window.removeEventListener("persona-chosen", onPersonaChosen);
     };
-  }, []);
+  }, [endSession, startSession]);
 
   // If we need a profile, request the global selector once
   useEffect(() => {
     if ((askProfile || !current) && !requestedSelectorRef.current) {
       requestedSelectorRef.current = true;
-      try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch {}
+  try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch (err) { console.debug("[Chat] dispatch open-profile-select failed", err); }
     }
     if (current) {
       requestedSelectorRef.current = false;
@@ -405,7 +383,7 @@ export default function Chat() {
             <div className="text-sm font-semibold leading-none">{current.name} · Chat Studio</div>
             <div className="text-xs text-neutral-500"></div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => { setAskProfile(true); try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch (e) { /* noop */ } }}>
+          <Button variant="outline" size="sm" onClick={() => { setAskProfile(true); try { window.dispatchEvent(new CustomEvent("open-profile-select")); } catch (err) { console.debug("[Chat] dispatch open-profile-select failed", err); } }}>
             프로필 선택
           </Button>
         </div>
@@ -437,7 +415,9 @@ export default function Chat() {
                         try {
                           e.dataTransfer.setData("text/uri-list", m.image);
                           e.dataTransfer.setData("text/plain", m.image);
-                        } catch {}
+                        } catch (err) {
+                          console.debug("[Chat] dragStart setData failed", err);
+                        }
                       }}
                       onDoubleClick={() => addToPreview(m.image)}
                     />

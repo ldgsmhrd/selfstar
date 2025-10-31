@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { API_BASE } from "@/api/client";
 
@@ -41,7 +41,7 @@ export default function MyPage() {
   const [instaError, setInstaError] = useState(null);
 
   // Helper: build and navigate to OAuth start (keeps current flags)
-  const startInstagramOAuth = () => {
+  const startInstagramOAuth = useCallback(() => {
     if (!activePersona?.num) {
       alert("먼저 연동할 프로필을 선택하세요.");
       setSelectorOpen(true);
@@ -50,15 +50,15 @@ export default function MyPage() {
     const personaParam = `?persona_num=${activePersona.num}`;
     // logout=1은 일부 환경에서 페이스북 홈으로 튀는 사례가 있어 기본값에서 제외
     window.location.href = `${API_BASE}/oauth/instagram/start${personaParam}&fresh=1&revoke=1&picker=1`;
-  };
+  }, [activePersona?.num]);
 
   const unlinkAndReauth = async () => {
     if (!activePersona?.num) { setSelectorOpen(true); return; }
     try {
       const res = await fetch(`${API_BASE}/oauth/instagram/unlink?persona_num=${activePersona.num}`, { method: "POST", credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    } catch (e) {
-      // 실패해도 재인증 시도로 진행
+    } catch (err) {
+      console.debug('[MyPage] unlink failed (continuing to reauth)', err);
     }
     startInstagramOAuth();
   };
@@ -79,8 +79,8 @@ export default function MyPage() {
         const picked = items.find((p) => p.num === saved) || items[0] || null;
         setActivePersona(picked);
         if (picked?.num) localStorage.setItem("activePersonaNum", String(picked.num));
-      } catch {
-        // noop
+      } catch (err) {
+        console.debug("[MyPage] load personas failed", err);
       } finally {
         setLoadingPersona(false);
       }
@@ -92,7 +92,7 @@ export default function MyPage() {
     setActivePersona(p);
     if (p?.num) localStorage.setItem("activePersonaNum", String(p.num));
     setSelectorOpen(false);
-    try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch {}
+  try { window.dispatchEvent(new CustomEvent("persona-chosen", { detail: p })); } catch (err) { console.debug("[MyPage] dispatch persona-chosen failed", err); }
     // Clear IG data to avoid showing previous persona's accounts/mapping
     setIgAccounts(null);
     setIgAccountsPersonaNum(null);
@@ -160,7 +160,7 @@ export default function MyPage() {
       }
     };
     load();
-  }, [integrationsOpen, activePersona?.num]);
+  }, [integrationsOpen, activePersona?.num, startInstagramOAuth]);
 
   // Load current persona's IG mapping to show linked status
   useEffect(() => {
@@ -227,12 +227,7 @@ export default function MyPage() {
     }
   };
 
-  const posts = useMemo(
-    () => [
-      { id: "post1", title: "게시물을 올려주세요.", date: "게시물 올린 날짜", channel: "플랫폼", status: "작성" },
-    ],
-    []
-  );
+  // removed unused posts placeholder
 
   // Load Instagram posts when Posts tab active or persona changes
   useEffect(() => {
@@ -416,9 +411,9 @@ export default function MyPage() {
                           if (!activePersona?.num) { setSelectorOpen(true); return; }
                           setInstaLoading(true);
                           try {
-                            const res = await fetch(`${API_BASE}/api/instagram/posts/sync?persona_num=${activePersona.num}&limit=18&days=30`, { method: 'POST', credentials: 'include' });
+                            await fetch(`${API_BASE}/api/instagram/posts/sync?persona_num=${activePersona.num}&limit=18&days=30`, { method: 'POST', credentials: 'include' });
                             // ignore errors, then reload list
-                          } catch {}
+                          } catch (err) { console.debug('[MyPage] posts sync failed', err); }
                           try {
                             const r = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
                             if (r.ok) {
@@ -575,7 +570,7 @@ export default function MyPage() {
                   className="btn light"
                   onClick={() => {
                     setSelectorOpen(false);
-                    try { window.dispatchEvent(new CustomEvent("open-imgcreate")); } catch {}
+                    try { window.dispatchEvent(new CustomEvent("open-imgcreate")); } catch (err) { console.debug('[MyPage] dispatch open-imgcreate failed', err); }
                   }}
                 >
                   새 프로필 만들기
@@ -693,13 +688,7 @@ function Empty({ title, action }) {
   );
 }
 
-function badgeTone(s) {
-  if (s === "발행") return "bg-emerald-100 text-emerald-700 border-emerald-200";
-  if (s === "예약") return "bg-blue-100 text-blue-700 border-blue-200";
-  return "bg-slate-100 text-slate-700 border-slate-200";
-}
-
-// ===== Insights helpers/components =====
+// ===== Number formatting helper =====
 function fmtNum(v) {
   if (v === null || v === undefined) return '-';
   const n = Number(v);
@@ -708,51 +697,4 @@ function fmtNum(v) {
   if (n >= 1000) return (n/1000).toFixed(1) + 'K';
   return String(n);
 }
-
-function sumSeries(arr) {
-  if (!Array.isArray(arr)) return '-';
-  const s = arr.reduce((acc, x) => acc + (Number(x?.value) || 0), 0);
-  return fmtNum(s);
-}
-
-function trendText(follows, unfollows) {
-  if (!Array.isArray(follows) || !Array.isArray(unfollows)) return '-';
-  const sumF = follows.reduce((a, x) => a + (Number(x?.value) || 0), 0);
-  const sumU = unfollows.reduce((a, x) => a + (Number(x?.value) || 0), 0);
-  const net = sumF - sumU;
-  const sign = net > 0 ? '+' : net < 0 ? '' : '';
-  return `순증가 ${sign}${fmtNum(net)}`;
-}
-
-function InsightStat({ label, value, sub, spark }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="text-xl font-bold mt-0.5">{value ?? '-'}</div>
-      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
-      {Array.isArray(spark) && spark.length > 1 && (
-        <div className="mt-2 h-10">
-          <Sparkline data={spark.map((p) => Number(p.value) || 0)} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Sparkline({ data = [] }) {
-  const w = 120, h = 36;
-  const max = Math.max(...data, 1);
-  const min = Math.min(...data, 0);
-  const span = Math.max(max - min, 1);
-  const step = data.length > 1 ? (w / (data.length - 1)) : w;
-  const points = data.map((v, i) => {
-    const x = i * step;
-    const y = h - ((v - min) / span) * h;
-    return `${x},${y}`;
-  }).join(' ');
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
-      <polyline points={points} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
+// Removed unused badgeTone, trend/sparkline helpers
