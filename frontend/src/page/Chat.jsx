@@ -12,8 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { API_BASE } from "@/api/client";
 
 // Helpers
-// Temporary: return empty caption so the UI shows a blank space
-const mockCaption = () => "";
+// deprecated: mockCaption no longer used; keep for potential future fallbacks
+// const mockCaption = () => "";
 
 const mockHashtags = (prompt) => {
   const words = (prompt || "패션쇼 블랙 드레스 런웨이 감도").split(/\s+/);
@@ -57,6 +57,8 @@ export default function Chat() {
   // Removed fly-to-preview animation; no auto-move
   const [vibe, setVibe] = useState("insta");
   const [lsSessionId, setLsSessionId] = useState(null);
+  const [caption, setCaption] = useState("");
+  const [captionLoading, setCaptionLoading] = useState(false);
 
   const currentPreview = previewImages.length ? previewImages[Math.min(previewIndex, previewImages.length - 1)] : null;
 
@@ -123,13 +125,13 @@ export default function Chat() {
         return;
       }
     }
-    const caption = `${mockCaption(prompt, vibe)}\n\n${mockHashtags(prompt).join(" ")}`.slice(0, 2200);
+  const cap = `${(caption || "").trim()}\n\n${mockHashtags(prompt).join(" ")}`.slice(0, 2200);
     try {
       const res = await fetch(`${API_BASE}/api/instagram/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ persona_num: current.num, image_url: uploadUrl, caption }),
+        body: JSON.stringify({ persona_num: current.num, image_url: uploadUrl, caption: cap }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && (data?.detail === "persona_oauth_required")) {
@@ -146,6 +148,32 @@ export default function Chat() {
       alert("인스타그램 업로드를 요청했습니다. 잠시 후 계정에서 게시물을 확인해 주세요.");
     } catch (e) {
       alert(`업로드 중 오류: ${e}`);
+    }
+  };
+  const autoGenerateCaption = async () => {
+    if (!currentPreview) {
+      alert("프리뷰에 이미지가 없습니다.");
+      return;
+    }
+    setCaptionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/instagram/caption/draft`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ persona_num: current.num, image: currentPreview, tone: vibe }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) {
+        const detail = data?.detail || data?.error || data;
+        alert(`캡션 생성 실패: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`);
+        return;
+      }
+      setCaption(data.caption || "");
+    } catch (e) {
+      alert(`캡션 생성 중 오류: ${e}`);
+    } finally {
+      setCaptionLoading(false);
     }
   };
   const handleDropOnPreview = (e) => {
@@ -590,10 +618,17 @@ export default function Chat() {
                         <SelectItem value="playful">발랄/이모지</SelectItem>
                       </SelectContent>
                     </Select>
-                    <Button size="sm" variant="secondary" onClick={() => copy(mockCaption(prompt, vibe))}>복사</Button>
+                    <Button size="sm" variant="secondary" onClick={() => copy(caption || "")} disabled={!caption}>복사</Button>
                   </div>
                 </div>
-                <Textarea value={mockCaption(prompt, vibe)} readOnly className="min-h-[72px]" />
+                <div className="relative">
+                  <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="자동 생성 또는 직접 입력하세요" className="min-h-[92px] pr-28" />
+                  <div className="absolute right-2 bottom-2">
+                    <Button size="sm" variant="outline" onClick={autoGenerateCaption} disabled={captionLoading || !currentPreview}>
+                      {captionLoading ? "생성 중…" : "캡션 자동생성"}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </CardContent>
             <CardFooter className="justify-center">

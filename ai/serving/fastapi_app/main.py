@@ -17,6 +17,13 @@ load_dotenv(dotenv_path=os.path.join(_ROOT, ".env"), override=True)
 
 from ai.serving.fastapi_app.routes.image_model import router as image_router
 try:
+	from ai.serving.fastapi_app.routes.caption import router as caption_router
+	_HAS_CAPTION = True
+except Exception as e:
+	import logging as _logging
+	_logging.getLogger("ai-main").error("caption router import failed: %s", e)
+	_HAS_CAPTION = False
+try:
 	from ai.serving.fastapi_app.routes.chat import router as chat_router
 	_HAS_CHAT = True
 except Exception as e:
@@ -29,6 +36,8 @@ app = FastAPI(title="SelfStar AI", version="0.1.0")
 app.include_router(image_router)
 if _HAS_CHAT:
 	app.include_router(chat_router)
+if _HAS_CAPTION:
+	app.include_router(caption_router)
 
 # Optional comment model router
 try:
