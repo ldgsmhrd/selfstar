@@ -88,9 +88,14 @@ function Home({ compact = false }) {
     남: ["일자", "아치형", "각진형", "두꺼운형"],
   };
 
-  // 성격 chips
+  // MBTI 선택 (단일 선택 드롭다운)
   const personalityList = useMemo(
-    () => ["활발함", "차분함", "상냥함", "도도함", "유머러스", "카리스마", "지적인", "우아한"],
+    () => [
+      "ISTJ","ISFJ","INFJ","INTJ",
+      "ISTP","ISFP","INFP","INTP",
+      "ESTP","ESFP","ENFP","ENTP",
+      "ESTJ","ESFJ","ENFJ","ENTJ",
+    ],
     []
   );
   const [personalities, setPersonalities] = useState([]); // 기본 없음
@@ -486,8 +491,8 @@ function Home({ compact = false }) {
                   placeholder="예: 23"
                 />
               </Field>
-                      {/* 성격: 드롭다운 (상단 정보 영역에 배치) */}
-                      <Field label="성격" compact>
+                      {/* MBTI: 드롭다운 (상단 정보 영역에 배치) */}
+                      <Field label="MBTI" compact>
                         <Select
                           value={personalities[0] || ""}
                           onChange={(e) => {
