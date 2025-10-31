@@ -97,7 +97,8 @@ async def caption_draft(request: Request, body: CaptionDraftBody):
         "tone": (body.tone or "").strip() or None,
     }
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        # Allow a little more time for the model to respond to reduce transient 502s
+        async with httpx.AsyncClient(timeout=30.0) as client:
             r = await client.post(f"{ai_url}/caption/generate", json=payload)
         if r.status_code != 200:
             try:

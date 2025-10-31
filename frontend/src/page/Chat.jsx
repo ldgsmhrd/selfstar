@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 // eslint-disable-next-line no-unused-vars
 import { motion } from "framer-motion";
-import { Image as ImageIcon, Loader2, MessageSquare, User, ChevronsRight, ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Image as ImageIcon, Loader2, MessageSquare, User, ChevronsRight, ChevronLeft, ChevronRight, X, PenLine } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,7 @@ const mockHashtags = (prompt) => {
 const avatarFromName = (name) => `https://api.dicebear.com/7.x/thumbs/svg?seed=${encodeURIComponent(name || "influencer")}`;
 
 export default function Chat() {
+  const nav = useNavigate();
   // Scroll handling for chat messages
   const messagesEndRef = useRef(null);
   const [current, setCurrent] = useState(null);
@@ -38,11 +40,13 @@ export default function Chat() {
 
   // chat messages; if image present, render image bubble
   const [messages, setMessages] = useState([
-    { id: 1, role: "assistant", text: "인플루언서를 선택하거나 생성해 주세요. 우측 도우미에서 캡션/해시태그를 복사할 수 있습니다.", ts: Date.now() - 5000 },
+    { id: 1, role: "assistant", text: "인스타그램을 연동해야 생성된 이미지를 인스타그램에 업로드할 수 있습니다.", ts: Date.now() - 5000 },
   ]);
 
   // options/inputs
-  const [prompt, setPrompt] = useState("패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈");
+  // 입력창은 예시를 placeholder로만 보여주고 값은 비워둠
+  const [prompt, setPrompt] = useState("");
+  const [lastPrompt, setLastPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   // Multi-image preview state with carousel controls
   const [previewImages, setPreviewImages] = useState([]); // array of data URIs/URLs
@@ -59,8 +63,50 @@ export default function Chat() {
   const [lsSessionId, setLsSessionId] = useState(null);
   const [caption, setCaption] = useState("");
   const [captionLoading, setCaptionLoading] = useState(false);
+  const [captionError, setCaptionError] = useState("");
+  // Abort controllers to prevent overlapping requests from spamming the console
+  const imgReqRef = useRef(null);
+  const captionReqRef = useRef(null);
+
+  // Handwritten-like loading bubble (fixed size)
+  function HandwriteLoader({ label = "이미지를 생성 중입니다…" }) {
+    const textRef = useRef(null);
+    const [w, setW] = useState(160);
+    useEffect(() => {
+      const r = textRef.current;
+      if (!r) return;
+      const measure = () => setW(r.offsetWidth || 160);
+      measure();
+      // re-measure on resize for safety
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }, []);
+    const D = 1.8; // seconds
+    return (
+      <div className="h-9 w-[260px] inline-flex items-center rounded-full bg-white/85 px-3 border shadow-sm relative overflow-hidden">
+        <motion.span
+          ref={textRef}
+          className="text-sm text-neutral-800 italic relative z-10"
+          initial={{ clipPath: "inset(0 100% 0 0)" }}
+          animate={{ clipPath: ["inset(0 100% 0 0)", "inset(0 0% 0 0)"] }}
+          transition={{ duration: D, ease: "easeInOut", repeat: Infinity }}
+        >
+          {label}
+        </motion.span>
+        <motion.div
+          className="absolute left-3 top-1/2 -translate-y-1/2 z-20"
+          animate={{ x: [0, Math.max(0, w - 6)] }}
+          transition={{ duration: D, ease: "easeInOut", repeat: Infinity }}
+        >
+          <PenLine className="size-4 text-neutral-700" />
+        </motion.div>
+      </div>
+    );
+  }
 
   const currentPreview = previewImages.length ? previewImages[Math.min(previewIndex, previewImages.length - 1)] : null;
+
+  // (이전 애니메이션 로딩은 제거)
 
   // 간단한 의도 감지: 사용자가 "다른 옷"을 요청하는지 판별
   const wantsDifferentOutfit = (text) => {
@@ -125,7 +171,7 @@ export default function Chat() {
         return;
       }
     }
-  const cap = `${(caption || "").trim()}\n\n${mockHashtags(prompt).join(" ")}`.slice(0, 2200);
+  const cap = `${(caption || "").trim()}\n\n${mockHashtags(lastPrompt || prompt).join(" ")}`.slice(0, 2200);
     try {
       const res = await fetch(`${API_BASE}/api/instagram/publish`, {
         method: "POST",
@@ -135,6 +181,11 @@ export default function Chat() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && (data?.detail === "persona_oauth_required")) {
+        // 채팅에 안내를 남겨 CTA 버튼이 함께 보이도록 함
+        setMessages((m) => [
+          ...m,
+          { id: Date.now(), role: "assistant", text: "인스타그램을 연동해야 생성된 이미지를 인스타그램에 업로드할 수 있습니다.", ts: Date.now() },
+        ]);
         if (confirm("인스타그램 계정 연동이 필요합니다. 지금 연결할까요?")) {
           const url = `${API_BASE}/oauth/instagram/start?persona_num=${encodeURIComponent(current.num)}&picker=1&fresh=1`;
           window.location.href = url;
@@ -155,25 +206,39 @@ export default function Chat() {
       alert("프리뷰에 이미지가 없습니다.");
       return;
     }
+    // cancel prior caption draft request if still in-flight
+    try { captionReqRef.current?.abort(); } catch {}
+    const ctrl = new AbortController();
+    captionReqRef.current = ctrl;
     setCaptionLoading(true);
+    setCaptionError("");
     try {
-      const res = await fetch(`${API_BASE}/api/instagram/caption/draft`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ persona_num: current.num, image: currentPreview, tone: vibe }),
-      });
-      const data = await res.json().catch(() => ({}));
+      let res, data;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await fetch(`${API_BASE}/api/instagram/caption/draft`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ persona_num: current.num, image: currentPreview, tone: vibe }),
+          signal: ctrl.signal,
+        });
+        data = await res.json().catch(() => ({}));
+        if (res.ok || res.status < 500) break;
+        await new Promise((r) => setTimeout(r, 700));
+      }
       if (!res.ok || !data?.ok) {
         const detail = data?.detail || data?.error || data;
-        alert(`캡션 생성 실패: ${typeof detail === "string" ? detail : JSON.stringify(detail)}`);
+        if (res.status !== 499) console.debug("[Caption] draft failed:", res.status, detail);
+        setCaptionError("캡션 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
       setCaption(data.caption || "");
     } catch (e) {
-      alert(`캡션 생성 중 오류: ${e}`);
+      if (e?.name !== "AbortError") console.debug("[Caption] draft error:", e);
+      setCaptionError("캡션 생성 중 오류가 발생했습니다.");
     } finally {
       setCaptionLoading(false);
+      if (captionReqRef.current === ctrl) captionReqRef.current = null;
     }
   };
   const handleDropOnPreview = (e) => {
@@ -227,6 +292,18 @@ export default function Chat() {
     }
   };
 
+  // 마이페이지 이동 + 인스타 연동 자동 시작
+  const goConnectInstagram = () => {
+    if (!current?.num) {
+      alert("먼저 페르소나를 선택해 주세요.");
+      return;
+    }
+    const oauthUrl = `${API_BASE}/oauth/instagram/start?persona_num=${encodeURIComponent(current.num)}&picker=1&fresh=1`;
+    // UX: 마이페이지로 먼저 이동 시도 후, 잠시 뒤 자동으로 연동 플로우 시작
+    try { nav("/mypage"); } catch {}
+    setTimeout(() => { window.location.href = oauthUrl; }, 150);
+  };
+
   // 엔드포인트: POST /chat/image
   // payload: { persona_num, user_text, ls_session_id?, style_img? }
   const generate = async () => {
@@ -234,21 +311,29 @@ export default function Chat() {
       alert("먼저 페르소나를 선택해 주세요.");
       return;
     }
+    const textToUse = (prompt || "").trim();
+    setLastPrompt(textToUse);
+    // 요청 시작 시 곧바로 입력창 비우기
+    setPrompt("");
     setIsGenerating(true);
+  // cancel previous image generation request if still pending
+  try { imgReqRef.current?.abort(); } catch {}
+  const ctrl = new AbortController();
+  imgReqRef.current = ctrl;
     const id = Date.now();
     const waitId = id + 0.5;
     setMessages((m) => [
       ...m,
-      { id, role: "user", text: prompt, ts: Date.now() },
-      { id: waitId, role: "assistant", text: "이미지를 생성 중입니다…", ts: Date.now() },
+      { id, role: "user", text: textToUse, ts: Date.now() },
+      { id: waitId, role: "assistant", loading: true, text: "이미지를 생성 중입니다…", ts: Date.now() },
     ]);
     try {
-      // Enforce keeping the same outfit only when a style reference is present AND the user didn't ask to change clothes
-      const styleLockNote = "Keep the exact same outfit from the style reference image. Do not change garment category, color, material, pattern, length, silhouette, or layers.";
-      const instaAspectNote = "Output a single vertical image strictly in 4:5 aspect ratio (portrait for Instagram feed). Aim for approximately 1080x1350 resolution. Fill the frame; no borders or letterboxing.";
-      const changeOutfit = wantsDifferentOutfit(prompt);
+  // Keep the same outfit only when a style reference is present AND the user didn't ask to change clothes
+  const styleLockNote = "Keep the exact same outfit from the style reference image. Do not change garment category, color, material, pattern, length, silhouette, or layers.";
+  const instaAspectNote = "Output a single vertical image strictly in 4:5 aspect ratio (portrait for Instagram feed). Aim for approximately 1080x1350 resolution. Fill the frame; no borders or letterboxing.";
+      const changeOutfit = wantsDifferentOutfit(textToUse);
       const styleSource = !changeOutfit ? (currentPreview || lastStyleImage) : null;
-      const userText = `${prompt}\n[ASPECT] ${instaAspectNote}` + (styleSource
+      const userText = `${textToUse}\n[ASPECT] ${instaAspectNote}` + (styleSource
         ? `\n[STYLE_ENFORCE] ${styleLockNote}`
         : `\n[STYLE_RESET] User requested different outfit — ignore any outfit/style references if present.`);
       const payload = {
@@ -260,15 +345,22 @@ export default function Chat() {
       if (styleSource) {
         payload.style_img = styleSource;
       }
-      console.log("[Chat] POST /chat/image ->", payload);
-      const res = await fetch(`${API_BASE}/api/chat/image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => ({}));
-      console.log("[Chat] /chat/image response:", res.status, data);
+  // console.debug("[Chat] POST /chat/image ->", payload);
+      // Retry once on transient 5xx
+      let res, data;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        res = await fetch(`${API_BASE}/api/chat/image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+          signal: ctrl.signal,
+        });
+        data = await res.json().catch(() => ({}));
+        if (res.ok || res.status < 500) break;
+        await new Promise((r) => setTimeout(r, 700));
+      }
+      // console.debug("[Chat] /chat/image response:", res.status, data);
       if (res.ok && data?.ok && data?.image) {
         setMessages((m) => {
           // replace the waiting message
@@ -295,12 +387,15 @@ export default function Chat() {
         });
       }
     } catch (e) {
-      setMessages((m) => {
+      if (e?.name !== "AbortError") {
+        setMessages((m) => {
         const others = m.filter((mm) => mm.id !== waitId);
         return [...others, { id: id + 1, role: "assistant", text: `요청 실패: ${e}`, ts: Date.now() }];
-      });
+        });
+      }
     } finally {
       setIsGenerating(false);
+      if (imgReqRef.current === ctrl) imgReqRef.current = null;
     }
   };
 
@@ -344,6 +439,14 @@ export default function Chat() {
     return () => { endSession(); };
   }, [endSession]);
 
+  // Abort any in-flight requests on unmount to avoid noisy console errors
+  useEffect(() => {
+    return () => {
+      try { imgReqRef.current?.abort(); } catch {}
+      try { captionReqRef.current?.abort(); } catch {}
+    };
+  }, []);
+
   // Listen for external open-profile-select and persona events (App coordinates the global modal)
   useEffect(() => {
     const onOpenProfileSelect = () => {
@@ -363,8 +466,8 @@ export default function Chat() {
       const c = { name: p.name, num: p.num, img: p.img, avatar: p.img || avatarFromName(p.name) };
       setCurrent(c);
       setAskProfile(false);
-      // Reset chat state and start a fresh session with the selected persona
-      setMessages([{ id: 1, role: "assistant", text: "인플루언서를 선택하거나 생성해 주세요. 우측 도우미에서 캡션/해시태그를 복사할 수 있습니다.", ts: Date.now() }]);
+  // Reset chat state and start a fresh session with the selected persona
+  setMessages([{ id: 1, role: "assistant", text: "인스타그램을 연동해야 생성된 이미지를 인스타그램에 업로드할 수 있습니다.", ts: Date.now() }]);
       setPreviewImages([]);
       setPreviewIndex(0);
       setShowPreviewHint(false);
@@ -429,32 +532,76 @@ export default function Chat() {
                 className={`max-w-[720px] rounded-2xl p-3 shadow-sm ${m.role === "assistant" ? "bg-white border" : "bg-neutral-900 text-white"}`}
               >
                 {m.image ? (
-                  <div>
-                    <img
-                      src={m.image}
-                      alt="message"
-                      className="rounded-xl w-full object-cover cursor-grab active:cursor-grabbing"
-                      style={{ maxHeight: 360 }}
-                      draggable
-                      ref={(el) => {
-                        if (el) imgRefs.current.set(m.id, el); else imgRefs.current.delete(m.id);
-                      }}
-                      onDragStart={(e) => {
-                        try {
-                          e.dataTransfer.setData("text/uri-list", m.image);
-                          e.dataTransfer.setData("text/plain", m.image);
-                        } catch (err) {
-                          console.debug("[Chat] dragStart setData failed", err);
-                        }
-                      }}
-                      onDoubleClick={() => addToPreview(m.image)}
-                    />
-                    <div className="mt-2 text-[11px] text-neutral-500">
-                      프리뷰에 넣어주세요 — 이 이미지를 프리뷰 박스로 드래그하거나 더블클릭하세요
+                  <div className="space-y-2">
+                    {/* 4:5 고정 비율 컨테이너 + 부드러운 등장 애니메이션 */}
+                    <div
+                      className="relative group rounded-xl overflow-hidden border bg-neutral-100 shadow-sm"
+                      style={{ height: 360, aspectRatio: "4 / 5" }}
+                    >
+                      <motion.img
+                        key={m.image}
+                        src={m.image}
+                        alt="message"
+                        className="absolute inset-0 w-full h-full object-cover cursor-grab active:cursor-grabbing"
+                        initial={{ opacity: 0, scale: 1.02 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.35, ease: "easeOut" }}
+                        draggable
+                        ref={(el) => {
+                          if (el) imgRefs.current.set(m.id, el); else imgRefs.current.delete(m.id);
+                        }}
+                        onDoubleClick={(e) => {
+                          e.preventDefault();
+                          addToPreview(m.image);
+                        }}
+                        onDragStart={(e) => {
+                          try {
+                            e.dataTransfer.setData("text/uri-list", m.image);
+                            e.dataTransfer.setData("text/plain", m.image);
+                          } catch {}
+                        }}
+                      />
+                      {/* hover glass overlay */}
+                      <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/10 via-transparent to-transparent" />
+                      </div>
                     </div>
+                    <div className="text-xs text-neutral-500">더블클릭하거나 드래그해서 우측 프리뷰에 담을 수 있어요.</div>
                   </div>
                 ) : (
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed">{m.text}</div>
+                  <div className="text-sm leading-relaxed">
+                    {m.loading ? (
+                      <div className="space-y-2">
+                        <div
+                          className="relative rounded-xl overflow-hidden border bg-neutral-100 shadow-sm"
+                          style={{ height: 360, aspectRatio: "4 / 5" }}
+                        >
+                          {/* soft background accents */}
+                          <div className="absolute inset-0 bg-gradient-to-br from-neutral-100 via-neutral-200/50 to-neutral-100" />
+                          <div className="absolute inset-0 grid place-items-center p-3">
+                            <HandwriteLoader />
+                          </div>
+                        </div>
+                        <div className="text-xs text-neutral-500">이미지 생성에는 조금 시간이 걸릴 수 있어요.</div>
+                      </div>
+                    ) : typeof m.text === "string" && /((인스타그램).*연동|연동.*(인스타그램))/.test(m.text) ? (
+                      <div className="inline-flex items-center gap-2">
+                        <div className="whitespace-pre-wrap inline">{m.text}</div>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="ml-2 rounded-full h-7 px-3 shadow-sm border bg-white/80 text-neutral-700 hover:bg-white"
+                          onClick={goConnectInstagram}
+                          title="마이페이지로 이동하여 인스타그램 연동을 시작합니다"
+                        >
+                          마이페이지 바로가기
+                          <ChevronsRight className="size-4 ml-1 text-emerald-600" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="whitespace-pre-wrap">{m.text}</div>
+                    )}
+                  </div>
                 )}
               </motion.div>
               {m.role === "user" && (
@@ -479,7 +626,19 @@ export default function Chat() {
           </div>
 
           <Label htmlFor="prompt" className="text-xs text-neutral-500">프롬프트</Label>
-          <Textarea id="prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="예) 패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈" className="min-h-20" />
+          <Textarea
+            id="prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (!isGenerating) generate();
+              }
+            }}
+            placeholder="예) 패션쇼 무드의 블랙 드레스, 런웨이 조명, 담백한 포즈"
+            className="min-h-20"
+          />
         </div>
       </main>
 
@@ -494,7 +653,7 @@ export default function Chat() {
           <Card className="overflow-hidden h-full flex flex-col">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2"><ImageIcon className="size-4" /> 프리뷰</CardTitle>
-              <CardDescription>{currentPreview ? "선택된 프리뷰를 확인하세요" : "채팅의 이미지를 이 영역으로 드래그하여 보관하세요"}</CardDescription>
+              <CardDescription>{currentPreview ? "선택된 프리뷰를 확인하세요." : "채팅의 이미지를 이 영역으로 드래그하여 보관하세요."}</CardDescription>
             </CardHeader>
             <CardContent className="flex-1 min-h-0 flex flex-col">
               <div
@@ -532,7 +691,7 @@ export default function Chat() {
                       transition={{ duration: 0.3 }}
                       className="relative z-10 flex flex-col items-center gap-2"
                     >
-                      <div className="text-[13px] font-medium text-neutral-700">이미지를 드래그하여 프리뷰에 담아두세요</div>
+                      <div className="text-[13px] font-medium text-neutral-700">이미지를 드래그하여 프리뷰에 담아두세요.</div>
                       <div className="text-[11px] text-neutral-500">아래 점 • 으로 여러 장을 넘겨볼 수 있어요</div>
                       {showPreviewHint && (
                         <motion.div
@@ -576,7 +735,7 @@ export default function Chat() {
                     </button>
                     <button
                       aria-label="제거"
-                      className="absolute top-2 right-2 h-8 w-8 rounded-full bg-white/90 text-neutral-700 shadow border hover:bg-white"
+                      className="absolute top-2 right-2 h-8 w-8 rounded-full bg-white/90 text-neutral-700 shadow border hover:bg-white flex items-center justify-center"
                       onClick={(e) => {
                         e.preventDefault();
                         removeCurrentPreview();
@@ -611,24 +770,29 @@ export default function Chat() {
                   <div className="flex items-center gap-2 text-[11px]">
                     <span className="text-neutral-500">톤</span>
                     <Select value={vibe} onValueChange={setVibe}>
-                      <SelectTrigger className="h-7 w-36"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-7 w-36" disabled><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="insta">Instagram</SelectItem>
-                        <SelectItem value="editorial">에디토리얼</SelectItem>
-                        <SelectItem value="playful">발랄/이모지</SelectItem>
                       </SelectContent>
                     </Select>
                     <Button size="sm" variant="secondary" onClick={() => copy(caption || "")} disabled={!caption}>복사</Button>
                   </div>
                 </div>
                 <div className="relative">
-                  <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="자동 생성 또는 직접 입력하세요" className="min-h-[92px] pr-28" />
+                  <Textarea value={caption} onChange={(e) => setCaption(e.target.value)} disabled={captionLoading} placeholder="자동 생성하거나 직접 캡션을 입력해 주세요" className="min-h-[92px] pr-28" />
                   <div className="absolute right-2 bottom-2">
-                    <Button size="sm" variant="outline" onClick={autoGenerateCaption} disabled={captionLoading || !currentPreview}>
-                      {captionLoading ? "생성 중…" : "캡션 자동생성"}
-                    </Button>
+                    {captionLoading ? (
+                      <HandwriteLoader label="캡션을 생성 중입니다…" />
+                    ) : (
+                      <Button size="sm" variant="outline" onClick={autoGenerateCaption} disabled={captionLoading || !currentPreview}>
+                        캡션 자동생성
+                      </Button>
+                    )}
                   </div>
                 </div>
+                {captionError && (
+                  <div className="text-xs text-rose-600">{captionError}</div>
+                )}
               </div>
             </CardContent>
             <CardFooter className="justify-center">

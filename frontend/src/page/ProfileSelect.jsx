@@ -21,8 +21,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
     let alive = true;
     (async () => {
       try {
-  console.log("[ProfileSelect] fetch /auth/me base=", API_BASE);
-  const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", cache: "no-store" });
+        const res = await fetch(`${API_BASE}/auth/me`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
@@ -39,14 +38,13 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
     let alive = true;
     (async () => {
       try {
-        console.log("[ProfileSelect] fetch /personas/me base=", API_BASE);
-  const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include", cache: "no-store" });
+        const res = await fetch(`${API_BASE}/api/personas/me`, { credentials: "include", cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         if (!alive) return;
-  const items = Array.isArray(data?.items) ? data.items : [];
-  // 낮은 num 먼저(오래된 → 새로운). num이 클수록 뒤로 가도록 오름차순 정렬
-  items.sort((a, b) => (a.num || 0) - (b.num || 0));
+        const items = Array.isArray(data?.items) ? data.items : [];
+        // 낮은 num 먼저(오래된 → 새로운). num이 클수록 뒤로 가도록 오름차순 정렬
+        items.sort((a, b) => (a.num || 0) - (b.num || 0));
         setPersonas(items);
       } catch {
         /* noop */

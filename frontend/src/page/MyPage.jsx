@@ -102,11 +102,15 @@ export default function MyPage() {
     setGalleryError(null);
   };
 
-  // After Instagram OAuth returns (?ig=connected), auto-open integrations modal and clean URL
+  // After Instagram OAuth returns (?ig=connected), auto-open integrations modal and clean URL.
+  // Important: do NOT force-open the local profile selector here.
   useEffect(() => {
     const params = new URLSearchParams(location.search || "");
     if (params.get("ig") === "connected") {
+      // Ensure profile selector isn't visible when returning from OAuth
+      setSelectorOpen(false);
       setIntegrationsOpen(true);
+      // Clean the URL quietly
       params.delete("ig");
       const search = params.toString();
       navigate({ pathname: location.pathname, search: search ? `?${search}` : "" }, { replace: true });
@@ -118,9 +122,11 @@ export default function MyPage() {
   useEffect(() => {
     const load = async () => {
       if (!integrationsOpen) return;
+      // 페르소나 상태가 아직 로딩 중이면 기다렸다가 다음 렌더에서 시도
+      if (loadingPersona) return;
       if (!activePersona?.num) {
-        // 프로필이 선택되지 않은 상태에서는 호출하지 않고 선택 모달을 유도
-        setSelectorOpen(true);
+        // 자동으로 프로필 교체 모달을 열지 않고, 연동관리 모달 내에서만 안내
+        setIgError("프로필을 먼저 선택하세요.");
         return;
       }
       setIgLoading(true);
@@ -135,12 +141,7 @@ export default function MyPage() {
             startInstagramOAuth();
             return;
           }
-          if (res.status === 400) {
-            // persona_num_required 등
-            setSelectorOpen(true);
-            setIgLoading(false);
-            return;
-          }
+          // 400 등의 기타 오류는 프로필 모달을 자동으로 열지 않고, 모달 내 오류 안내만 표시
           const txt = await res.text().catch(() => "");
           throw new Error(txt || `HTTP ${res.status}`);
         }
@@ -160,7 +161,7 @@ export default function MyPage() {
       }
     };
     load();
-  }, [integrationsOpen, activePersona?.num, startInstagramOAuth]);
+  }, [integrationsOpen, activePersona?.num, loadingPersona, startInstagramOAuth]);
 
   // Load current persona's IG mapping to show linked status
   useEffect(() => {
@@ -283,8 +284,8 @@ export default function MyPage() {
           personaImg={activePersona?.img}
           igLinked={!!igMapping}
           followerCount={followerCount}
-          onOpenIntegrations={() => setIntegrationsOpen(true)}
-          onOpenProfileChange={() => setSelectorOpen(true)}
+          onOpenIntegrations={() => { setSelectorOpen(false); setIntegrationsOpen(true); }}
+          onOpenProfileChange={() => { if (!integrationsOpen) setSelectorOpen(true); }}
           loadingPersona={loadingPersona}
         />
 
@@ -341,7 +342,6 @@ export default function MyPage() {
                 <TabButton active={tab === "photos"} onClick={() => setTab("photos")} label="사진" />
                 <TabButton active={tab === "posts"} onClick={() => setTab("posts")} label="게시글" />
                 <TabButton active={tab === "drafts"} onClick={() => setTab("drafts")} label="임시저장" />
-                <TabButton active={tab === "scheduled"} onClick={() => setTab("scheduled")} label="예약" />
               </div>
               <Link to="/dashboard" className="btn light">대시보드</Link>
             </div>
@@ -392,7 +392,7 @@ export default function MyPage() {
               </Card>
             )}
 
-            {(tab === "drafts" || tab === "scheduled") && (
+            {tab === "drafts" && (
               <Card>
                 <Empty title="아직 콘텐츠가 없어요" action="새로 만들기" />
               </Card>
