@@ -1,4 +1,3 @@
-version: "3.9"
 # Production deployment stack for selfstar.duckdns.org with Nginx reverse proxy and TLS (Let's Encrypt)
 services:
   nginx:

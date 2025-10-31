@@ -42,7 +42,7 @@ export default function DashboardInsights() {
         const saved = Number(localStorage.getItem('activePersonaNum') || 0);
         const pick = items.find(p=>p.num===saved) || items[0] || null;
         setPersona(pick);
-      } catch {}
+      } catch (err) { console.debug('[Dashboard] load personas failed', err); }
     })();
     return ()=>{ alive=false; };
   }, []);

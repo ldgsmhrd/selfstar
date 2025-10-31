@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from app.core.s3 import s3_enabled, put_data_uri, presign_get_url
 
 # 파트: 파일/URL 유틸리티 — 공개 URL 보장(S3 우선)
-router = APIRouter(prefix="/files", tags=["files"]) 
+router = APIRouter(prefix="/api/files", tags=["files"]) 
 
 
 class EnsurePublicBody(BaseModel):

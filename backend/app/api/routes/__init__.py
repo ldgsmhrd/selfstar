@@ -57,6 +57,12 @@ except Exception:
     pass
 
 try:
+    from .instagram_caption import router as ig_caption_router
+    router.include_router(ig_caption_router)
+except Exception:
+    pass
+
+try:
     from .instagram_comments import router as ig_comments_router
     router.include_router(ig_comments_router)
 except Exception:
