@@ -21,6 +21,16 @@ body { margin: 0; }
          bg-white border border-gray-300 hover:bg-gray-50;
 }
 
+/* 옅은 파란색 계열 버튼 (소형에서도 쓰기 좋게 padding은 개별 요소에서 지정) */
+.btn-soft-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-full font-semibold transition whitespace-nowrap text-slate-900;
+  background-color: #D8EDFF; /* base */
+  box-shadow: 0 8px 20px rgba(216, 237, 255, 0.35);
+  border: 1px solid #CFE7FF;
+}
+.btn-soft-primary:hover { background-color: #CFE7FF; }
+.btn-soft-primary:active { background-color: #BFE0FF; }
+
 /* ===== 카드/칩 ===== */
 .card {
   @apply rounded-2xl border border-gray-200/70 shadow-[0_8px_24px_rgba(2,6,23,0.06)] bg-white;

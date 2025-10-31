@@ -32,6 +32,8 @@ export default function MyPage() {
   const [igMapping, setIgMapping] = useState(null); // { user_id, user_persona_num, ig_user_id, ig_username, fb_page_id }
   const [igMappingLoading, setIgMappingLoading] = useState(false);
   // Insights는 마이페이지에서 표시하지 않음(대시보드 전용)
+  // But we do show a simple follower count in header when linked
+  const [followerCount, setFollowerCount] = useState(null);
 
   // Instagram posts (DB-cached) state
   const [instaPosts, setInstaPosts] = useState([]); // [{id, media_url, thumbnail_url, permalink, timestamp, like_count, comments_count}]
@@ -181,6 +183,23 @@ export default function MyPage() {
   }, [activePersona?.num, integrationsOpen]);
 
   // (제거) 인사이트 폴링은 대시보드에서만 수행
+  // Fetch a lightweight insights overview to get followers_count only when IG is linked
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!activePersona?.num || !igMapping?.ig_user_id) { setFollowerCount(null); return; }
+      try {
+        const r = await fetch(`${API_BASE}/api/instagram/insights/overview?persona_num=${activePersona.num}&days=7`, { credentials: 'include' });
+        if (!r.ok) { setFollowerCount(null); return; }
+        const data = await r.json();
+        if (!alive) return;
+        setFollowerCount(data?.followers_count ?? null);
+      } catch {
+        setFollowerCount(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [activePersona?.num, igMapping?.ig_user_id]);
 
   const linkPersonaToIG = async (account) => {
     if (!activePersona?.num) {
@@ -267,6 +286,8 @@ export default function MyPage() {
           creditMax={creditMax}
           personaName={activePersona?.name}
           personaImg={activePersona?.img}
+          igLinked={!!igMapping}
+          followerCount={followerCount}
           onOpenIntegrations={() => setIntegrationsOpen(true)}
           onOpenProfileChange={() => setSelectorOpen(true)}
           loadingPersona={loadingPersona}
@@ -279,11 +300,10 @@ export default function MyPage() {
               <div className="mt-4 space-y-4">
                 <ConnectRow
                   logo="IG"
-                  name="Instagram"
+                  name={igMapping ? `@${igMapping.ig_username || "연결됨"}` : "instagram"}
                   status={igMapping ? "연동됨" : (igMappingLoading ? "확인 중…" : "미연동")}
-                  hint={igMapping ? (`@${igMapping.ig_username || "연결됨"} · Page ${igMapping.fb_page_id}`) : "연동해주세요!"}
+                  hint={igMapping ? "instagram" : "연동해주세요!"}
                 />
-                <ConnectRow logo="Th" name="Threads" status="미연동" hint="연동해주세요!" />
               </div>
               <button
                 className="btn primary mt-4 w-full"
@@ -463,9 +483,9 @@ export default function MyPage() {
             </div>
             <div className="p-5 space-y-4">
               <div className="rounded-xl border border-slate-200 bg-white/70 p-4">
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-3 mb-3 justify-center">
                   <div className="w-8 h-8 rounded-full bg-black text-white text-[10px] grid place-items-center">IG</div>
-                  <div>
+                  <div className="text-center">
                     <div className="font-semibold">Instagram 계정 연동</div>
                     <div className="text-xs text-slate-500">현재 페르소나와 연동할 페이지/계정을 선택하세요.</div>
                   </div>
@@ -495,10 +515,12 @@ export default function MyPage() {
                     ))}
                   </div>
                 )}
-                <div className="mt-3 text-xs text-slate-500">
+                <div className="mt-3 text-xs text-slate-500 text-center">
                   토큰이 만료되었거나 계정이 보이지 않으면 Meta OAuth를 다시 진행하세요.
-                  <button className="btn light ml-2" onClick={startInstagramOAuth}>다시 인증</button>
-                  <button className="btn ml-2" onClick={unlinkAndReauth}>연결 해제 후 재연동</button>
+                  <div className="mt-2 flex items-center justify-center gap-2">
+                    <button className="btn light" onClick={startInstagramOAuth}>다시 인증</button>
+                    <button className="btn" onClick={unlinkAndReauth}>연결 해제 후 재연동</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -567,7 +589,7 @@ export default function MyPage() {
   );
 }          
 
-function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenIntegrations, onOpenProfileChange, loadingPersona }) {
+function HeaderSummary({ credit, creditMax, personaName, personaImg, igLinked, followerCount, onOpenIntegrations, onOpenProfileChange, loadingPersona }) {
   const pct = Math.min(100, Math.round((credit / creditMax) * 100));
   return (
     <div className="rounded-3xl border border-slate-200 bg-white/80 backdrop-blur p-6 shadow-[0_10px_30px_rgba(30,64,175,0.08)]">
@@ -588,7 +610,7 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, onOpenInteg
             </div>
             <div className="text-sm text-slate-500">마이페이지에서 활동 프로필을 관리하세요.</div>
             <div className="mt-2 flex gap-6 text-sm">
-              <Stat label="팔로워" value="-" />
+              <Stat label="팔로워" value={igLinked ? fmtNum(followerCount) : "-"} />
               <Stat label="참여율" value="-" />
               <Stat label="주간도달" value="-" />
             </div>
@@ -623,16 +645,21 @@ function Stat({ label, value }) {
 }
 
 function ConnectRow({ logo, name, status, hint }) {
+  const linked = status === "연동됨";
   return (
     <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-1">
         <div className="w-7 h-7 rounded-full bg-black text-white text-[10px] flex items-center justify-center">{logo}</div>
-        <div className="flex flex-col">
-          <div className="text-slate-800 text-sm">{name}</div>
-          <div className="text-[11px] text-slate-400">{hint}</div>
+        <div className="flex flex-col items-center flex-1">
+          <div className="text-slate-800 text-sm text-center">{name}</div>
+          <div className="text-[11px] text-slate-400 text-center">{hint}</div>
         </div>
       </div>
-      <span className="text-[10px] px-2 py-0.5 rounded-full border bg-slate-100 text-slate-600 border-slate-200">{status}</span>
+      {linked ? (
+        <span className="btn-soft-primary text-[10px] px-2 py-0.5">{status}</span>
+      ) : (
+        <span className="text-[10px] px-2 py-0.5 rounded-full border bg-slate-100 text-slate-600 border-slate-200">{status}</span>
+      )}
     </div>
   );
 }

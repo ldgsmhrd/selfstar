@@ -433,4 +433,12 @@ async def end_chat_session(request: Request, body: dict = Body(default={})):
             sid = request.session.pop("ls_session_id", None)
     except Exception:
         pass
+    # Best-effort: notify AI to clear any in-memory session state
+    try:
+        if sid:
+            ai_url = (os.getenv("AI_SERVICE_URL") or "http://ai:8600").rstrip("/")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(f"{ai_url}/chat/session/clear", json={"ls_session_id": sid})
+    except Exception:
+        pass
     return {"ok": True, "ls_session_id": sid}

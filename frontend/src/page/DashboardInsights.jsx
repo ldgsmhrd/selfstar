@@ -1,7 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 // import { Link } from "react-router-dom";
 import { API_BASE } from "@/api/client";
 import PersonaQuickPicker from "@/components/PersonaQuickPicker.jsx";
+import {
+  LineChart as RLineChart,
+  Line,
+  BarChart as RBarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+} from "recharts";
 
 export default function DashboardInsights() {
   const [personas, setPersonas] = useState([]);
@@ -66,6 +80,26 @@ export default function DashboardInsights() {
     load();
   }, [persona?.num]);
 
+  // ===== Transform series for charts (with aligned dates) =====
+  const mergedFollowersProfile = useMemo(() => {
+    const a = data?.series?.follower_count || [];
+    const b = data?.series?.profile_views || [];
+    const map = new Map();
+    for (const it of a) map.set(it.date, { date: it.date, followers: Number(it.value) || 0 });
+    for (const it of b) {
+      const prev = map.get(it.date) || { date: it.date };
+      map.set(it.date, { ...prev, profile_views: Number(it.value) || 0 });
+    }
+    return Array.from(map.values()).sort((x, y) => new Date(x.date) - new Date(y.date));
+  }, [data?.series?.follower_count, data?.series?.profile_views]);
+
+  const approxLikesByDay = useMemo(() => {
+    return (data?.series?.approx_likes_by_post_day || []).map((d) => ({ date: d.date, value: Number(d.value) || 0 }));
+  }, [data?.series?.approx_likes_by_post_day]);
+
+  const followersDelta = useMemo(() => (daily?.followers_delta || []).map(d => ({ date: d.date, value: Number(d.value) || 0 })), [daily?.followers_delta]);
+  const likesDelta = useMemo(() => (daily?.likes_delta || []).map(d => ({ date: d.date, value: Number(d.value) || 0 })), [daily?.likes_delta]);
+
   return (
     <div className="w-full space-y-6">
       {/* 헤더 카드 */}
@@ -126,25 +160,50 @@ export default function DashboardInsights() {
             <InsightStat label="노출" value={sumSeries(data?.series?.impressions)} spark={data?.series?.impressions} />
           </div>
 
-          {/* 그래프 섹션: 2열 배치 */}
+          {/* 그래프 섹션: 2열 배치 (responsive, with tooltips) */}
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="text-sm text-slate-500 mb-2">30일 · 팔로워 수 / 프로필 방문수</div>
-              <MultiLineChart
-                width={760}
-                height={240}
-                series={[
-                  { name: '팔로워 수', color: '#2563eb', data: data?.series?.follower_count || [] },
-                  { name: '프로필 방문수', color: '#16a34a', data: data?.series?.profile_views || [] },
-                ]}
-              />
+              <div style={{ width: '100%', height: 260 }}>
+                <ResponsiveContainer>
+                  <AreaChart data={mergedFollowersProfile} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gradFollowers" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+                      </linearGradient>
+                      <linearGradient id="gradProfile" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#16a34a" stopOpacity={0.35} />
+                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} tickMargin={6} />
+                    <YAxis tick={{ fontSize: 11 }} width={40} />
+                    <Tooltip formatter={(v)=>fmtNum(v)} labelFormatter={(l)=>fmtDate(l)} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                    <Area type="monotone" dataKey="followers" name="팔로워 수" stroke="#2563eb" fill="url(#gradFollowers)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="profile_views" name="프로필 방문수" stroke="#16a34a" fill="url(#gradProfile)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm text-slate-500">30일 · 게시일 기준 좋아요 합계(approx)</div>
                 <div className="text-[10px] text-slate-400">API 한계로 일별 증가분은 스냅샷 저장이 필요</div>
               </div>
-              <BarChart width={760} height={180} data={data?.series?.approx_likes_by_post_day || []} color="#f59e0b" />
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <RBarChart data={approxLikesByDay} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} tickMargin={6} />
+                    <YAxis tick={{ fontSize: 11 }} width={40} />
+                    <Tooltip formatter={(v)=>fmtNum(v)} labelFormatter={(l)=>fmtDate(l)} />
+                    <Bar dataKey="value" name="좋아요" fill="#f59e0b" radius={[4,4,0,0]} />
+                  </RBarChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </div>
 
@@ -152,14 +211,34 @@ export default function DashboardInsights() {
           <div className="grid lg:grid-cols-2 gap-6">
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="text-sm text-slate-500 mb-2">스냅샷 · 팔로워 일별 증가</div>
-              <LineChart width={760} height={180} data={daily?.followers_delta || []} color="#2563eb" />
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <RLineChart data={followersDelta} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} tickMargin={6} />
+                    <YAxis tick={{ fontSize: 11 }} width={40} />
+                    <Tooltip formatter={(v)=>fmtNum(v)} labelFormatter={(l)=>fmtDate(l)} />
+                    <Line type="monotone" dataKey="value" name="증가" stroke="#2563eb" strokeWidth={2} dot={false} />
+                  </RLineChart>
+                </ResponsiveContainer>
+              </div>
               {!daily?.followers_delta?.length && (
                 <div className="text-xs text-slate-400 mt-2">스냅샷이 아직 부족합니다. 자정 자동 스냅샷 이후에 증가분이 표시됩니다.</div>
               )}
             </div>
             <div className="rounded-3xl border bg-white/80 p-6">
               <div className="text-sm text-slate-500 mb-2">스냅샷 · 좋아요 일별 증가</div>
-              <BarChart width={760} height={180} data={daily?.likes_delta || []} color="#fb7185" />
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <RBarChart data={likesDelta} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} tickMargin={6} />
+                    <YAxis tick={{ fontSize: 11 }} width={40} />
+                    <Tooltip formatter={(v)=>fmtNum(v)} labelFormatter={(l)=>fmtDate(l)} />
+                    <Bar dataKey="value" name="증가" fill="#fb7185" radius={[4,4,0,0]} />
+                  </RBarChart>
+                </ResponsiveContainer>
+              </div>
               {!daily?.likes_delta?.length && (
                 <div className="text-xs text-slate-400 mt-2">스냅샷이 부족합니다. 최소 2일 이상 자동 기록이 있어야 증가분이 계산됩니다.</div>
               )}
@@ -245,53 +324,4 @@ function SkeletonCard(){
 function Sparkline({ data=[] }){ const w=140,h=36; const max=Math.max(...data,1); const min=Math.min(...data,0); const span=Math.max(max-min,1); const step=data.length>1?(w/(data.length-1)):w; const pts=data.map((v,i)=>{ const x=i*step; const y=h-((v-min)/span)*h; return `${x},${y}`; }).join(' '); return (<svg width={w} height={h} viewBox={`0 0 ${w} ${h}`}><polyline points={pts} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" /></svg>); }
 function fmtDate(s){ try{ return new Date(s).toLocaleDateString(); }catch{ return s||''; } }
 
-// 간단한 SVG 멀티라인 차트
-function MultiLineChart({ width=640, height=220, series=[] }){
-  const pad=24; const innerW=width-pad*2; const innerH=height-pad*2;
-  const dates=(series[0]?.data||[]).map(d=>d.date);
-  const lines=series.map(s=>({ name:s.name, color:s.color, values:(s.data||[]).map(d=>Number(d.value)||0) }));
-  const all=lines.flatMap(l=>l.values);
-  const max=Math.max(1,...all);
-  const step=dates.length>1?innerW/(dates.length-1):innerW;
-  const toX=i=>pad+i*step; const toY=v=>pad+innerH-(v/max)*innerH;
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <line x1={pad} y1={height-pad} x2={width-pad} y2={height-pad} stroke="#e5e7eb" />
-      {lines.map((l,idx)=>{
-        const pts=l.values.map((v,i)=>`${toX(i)},${toY(v)}`).join(' ');
-        return <polyline key={idx} points={pts} fill="none" stroke={l.color||'#2563eb'} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round"/>;
-      })}
-    </svg>
-  );
-}
-
-function BarChart({ width=640, height=160, data=[], color="#2563eb" }){
-  const pad=24; const innerW=width-pad*2; const innerH=height-pad*2;
-  const vals=(data||[]).map(d=>Number(d.value)||0);
-  const max=Math.max(1,...vals);
-  const bw=data.length?innerW/data.length-2:innerW;
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <line x1={pad} y1={height-pad} x2={width-pad} y2={height-pad} stroke="#e5e7eb" />
-      {(data||[]).map((d,i)=>{
-        const h=(vals[i]/max)*innerH; const x=pad+i*(bw+2); const y=height-pad-h;
-        return <rect key={d.date||i} x={x} y={y} width={bw} height={h} rx={3} fill={color} opacity={0.85}/>;
-      })}
-    </svg>
-  );
-}
-
-function LineChart({ width=640, height=160, data=[], color="#2563eb" }){
-  const pad=24; const innerW=width-pad*2; const innerH=height-pad*2;
-  const vals=(data||[]).map(d=>Number(d.value)||0);
-  const max=Math.max(1,...vals);
-  const step=(data||[]).length>1?innerW/((data||[]).length-1):innerW;
-  const toX=i=>pad+i*step; const toY=v=>pad+innerH-(v/max)*innerH;
-  const pts=(data||[]).map((d,i)=>`${toX(i)},${toY(vals[i])}`).join(' ');
-  return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <line x1={pad} y1={height-pad} x2={width-pad} y2={height-pad} stroke="#e5e7eb" />
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
-}
+// Removed custom SVG charts in favor of Recharts for better UX (tooltips, responsive, legend)

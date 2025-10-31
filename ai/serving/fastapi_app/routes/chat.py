@@ -20,6 +20,27 @@ log = logging.getLogger("ai-chat")
 _client = None
 _jobs: Dict[str, Dict] = {}
 
+# ===== Session memory (LangChain) =====
+try:
+    from langchain.memory import ConversationBufferMemory  # type: ignore
+    from langchain.schema import HumanMessage, AIMessage  # type: ignore
+    _LC_AVAILABLE = True
+except Exception:
+    ConversationBufferMemory = None  # type: ignore
+    HumanMessage = AIMessage = None  # type: ignore
+    _LC_AVAILABLE = False
+
+_SESSION_MEMORY: Dict[str, ConversationBufferMemory] = {}
+
+def _get_memory(session_id: Optional[str]) -> Optional[ConversationBufferMemory]:
+    if not _LC_AVAILABLE or not session_id:
+        return None
+    mem = _SESSION_MEMORY.get(session_id)
+    if mem is None:
+        mem = ConversationBufferMemory(return_messages=True, memory_key="history")
+        _SESSION_MEMORY[session_id] = mem
+    return mem
+
 # Optional LangSmith tracing
 LS_ENABLED = False
 LS_PROJECT = os.getenv("LANGSMITH_PROJECT") or os.getenv("LANGCHAIN_PROJECT") or "Selfstar.AI"
@@ -101,6 +122,23 @@ async def chat_trace_heartbeat(body: dict | None = None):
         }
     except Exception:
         return {"ok": False, "ls_enabled": bool(LS_ENABLED)}
+
+
+@router.post("/chat/session/clear")
+async def chat_session_clear(body: dict | None = None):
+    """Clear in-memory conversation state for a given session id."""
+    try:
+        sid = None
+        if isinstance(body, dict):
+            sid = body.get("ls_session_id") or body.get("session_id")
+        if sid and sid in _SESSION_MEMORY:
+            try:
+                del _SESSION_MEMORY[sid]
+            except Exception:
+                _SESSION_MEMORY.pop(sid, None)
+        return {"ok": True, "cleared": bool(sid)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 def _get_client():
@@ -360,8 +398,28 @@ async def chat_image(req: ChatImageRequest):
             client = None
 
         persona_text = req.persona or ""
+        # ===== Pull session memory and include as context =====
+        mem = _get_memory(req.ls_session_id)
+        history_text = ""
+        if mem is not None:
+            try:
+                msgs = getattr(mem, "chat_memory").messages or []
+                # Keep last 8 exchanges
+                tail = msgs[-16:]
+                formatted = []
+                for m in tail:
+                    if hasattr(m, 'content'):
+                        role = 'User' if m.__class__.__name__.startswith('Human') else 'Assistant'
+                        txt = str(getattr(m, 'content', '') or '')
+                        if txt:
+                            formatted.append(f"{role}: {txt}")
+                if formatted:
+                    history_text = "\n".join(formatted)
+            except Exception:
+                history_text = ""
         # Build the notebook meta-prompt and improve it with a text model (2-step flow)
-        meta_prompt = _build_meta_prompt(persona_text, req.user_text, bool(req.style_img))
+        extra_context = ("\n\nPrevious session conversation (use to maintain continuity, style preferences and constraints):\n" + history_text) if history_text else ""
+        meta_prompt = _build_meta_prompt(persona_text, req.user_text, bool(req.style_img)) + extra_context
 
         generated_prompt = ""
         if client is not None:
@@ -498,6 +556,14 @@ async def chat_image(req: ChatImageRequest):
                 if rt:
                     rt.end(outputs={"ok": True, "image_mime": out_mime, "image_len": len(out_bytes)})
                     rt.post(lsc)
+                # Update session memory with this turn
+                if mem is not None:
+                    try:
+                        mem.chat_memory.add_user_message(req.user_text)
+                        # store brief info instead of full data-uri
+                        mem.chat_memory.add_ai_message("[image_generated]")
+                    except Exception:
+                        pass
                 return ChatImageResponse(ok=True, prompt=generated_prompt, image=data_uri)
         else:
             # Fallback placeholder image
