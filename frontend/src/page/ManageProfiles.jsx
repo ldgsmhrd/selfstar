@@ -2,11 +2,11 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { API_BASE } from "@/api/client";
 
-export default function ManageProfiles() {
+export default function ManageProfiles({ embedded = false, onClose, onRequestCreateNew }) {
   const [items, setItems] = useState([]); // [{num, name, img}]
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [editing, setEditing] = useState(null); // { num, name, file? }
+  const [editing, setEditing] = useState(null); // { num, name }
   const [deleting, setDeleting] = useState(null); // persona to delete
   const nav = useNavigate();
 
@@ -29,7 +29,7 @@ export default function ManageProfiles() {
 
   useEffect(() => { load(); }, []);
 
-  const onEdit = (p) => setEditing({ num: p.num, name: p.name || "", file: null });
+  const onEdit = (p) => setEditing({ num: p.num, name: p.name || "" });
   const onDelete = (p) => setDeleting(p);
 
   const submitEdit = async () => {
@@ -43,16 +43,6 @@ export default function ManageProfiles() {
           credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
-        });
-      }
-      // 2) 이미지 파일이 있으면 업로드 → 서버가 persona_img 를 저장
-      if (editing.file) {
-        const dataUri = await fileToDataUri(editing.file);
-        await fetch(`${API_BASE}/api/images/save`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image: dataUri, model: "profile", prefix: "personas", persona_num: editing.num }),
         });
       }
       setEditing(null);
@@ -81,8 +71,21 @@ export default function ManageProfiles() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">프로필 관리</h1>
         <div className="flex gap-2">
-          <Link to="/profiles" className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50">프로필 선택으로</Link>
-          <Link to="/imgcreate" className="px-3 py-2 rounded-lg border bg-blue-600 text-white">새 프로필 만들기</Link>
+          {embedded ? (
+            <>
+              <button className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50" onClick={() => onClose?.()}>닫기</button>
+              <button className="px-3 py-2 rounded-lg border bg-blue-600 text-white" onClick={() => {
+                onRequestCreateNew?.();
+                // 전역 모달을 사용하는 환경에서는 App이 이미지 생성 모달을 열어줍니다
+                try { window.dispatchEvent(new CustomEvent('open-imgcreate')); } catch {}
+              }}>새 프로필 만들기</button>
+            </>
+          ) : (
+            <>
+              <Link to="/profiles" className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50">프로필 선택으로</Link>
+              <Link to="/imgcreate" className="px-3 py-2 rounded-lg border bg-blue-600 text-white">새 프로필 만들기</Link>
+            </>
+          )}
         </div>
       </div>
 
@@ -104,7 +107,7 @@ export default function ManageProfiles() {
               <div className="px-3 py-2 flex items-center justify-between">
                 <div className="font-semibold truncate">{p.name || `프로필 ${p.num}`}</div>
                 <div className="flex gap-2">
-                  <button className="text-xs px-2 py-1 rounded border hover:bg-slate-50" onClick={() => onEdit(p)}>수정</button>
+                  <button className="text-xs px-2 py-1 rounded border hover:bg-slate-50" onClick={() => onEdit(p)}>이름 수정</button>
                   <button className="text-xs px-2 py-1 rounded border border-red-200 text-red-700 hover:bg-red-50" onClick={() => onDelete(p)}>삭제</button>
                 </div>
               </div>
@@ -117,19 +120,33 @@ export default function ManageProfiles() {
       {editing && (
         <div className="fixed inset-0 bg-[rgba(15,23,42,0.45)] grid place-items-center z-50" onClick={() => setEditing(null)}>
           <div className="w-[min(480px,92vw)] rounded-2xl border bg-white p-4 shadow-xl" onClick={(e)=>e.stopPropagation()}>
-            <h2 className="font-bold text-lg mb-2">프로필 수정</h2>
+            <h2 className="font-bold text-lg mb-2">이름 수정</h2>
             <div className="space-y-3">
               <label className="block">
                 <div className="text-sm text-slate-600 mb-1">이름</div>
                 <input value={editing.name} onChange={(e)=>setEditing(v=>({...v, name:e.target.value}))} className="w-full h-11 rounded-xl border px-3" placeholder="프로필 이름" />
               </label>
-              <label className="block">
-                <div className="text-sm text-slate-600 mb-1">이미지 변경 (선택)</div>
-                <input type="file" accept="image/*" onChange={(e)=> setEditing(v=>({...v, file: e.target.files?.[0] || null}))} />
-              </label>
+              <div className="text-xs text-slate-500">이미지를 바꾸려면 새 프로필을 만들어주세요. 기존 프로필은 그대로 유지됩니다.</div>
               <div className="flex justify-end gap-2 pt-1">
                 <button className="px-3 py-2 rounded-lg border" onClick={()=>setEditing(null)}>취소</button>
                 <button className="px-3 py-2 rounded-lg bg-blue-600 text-white" onClick={submitEdit}>저장</button>
+              </div>
+              <div className="flex justify-between items-center mt-2">
+                <div className="text-sm text-slate-600">새 프로필 만들기</div>
+                <button
+                  className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50"
+                  onClick={() => {
+                    setEditing(null);
+                    if (embedded) {
+                      onRequestCreateNew?.();
+                    } else {
+                      nav('/imgcreate');
+                    }
+                    try { window.dispatchEvent(new CustomEvent('open-imgcreate')); } catch {}
+                  }}
+                >
+                  이미지로 새로 만들기
+                </button>
               </div>
             </div>
           </div>
@@ -153,9 +170,3 @@ export default function ManageProfiles() {
   );
 }
 
-async function fileToDataUri(file){
-  const buf = await file.arrayBuffer();
-  const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-  const type = file.type || "image/png";
-  return `data:${type};base64,${b64}`;
-}

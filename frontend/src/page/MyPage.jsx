@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { API_BASE } from "@/api/client";
+import Credit from "./Credit.jsx";
 
 export default function MyPage() {
   const location = useLocation();
@@ -11,8 +12,9 @@ export default function MyPage() {
     { id: 2, text: "인스타 연동 확인", done: false },
     { id: 3, text: "샘플 사진 5장 업로드", done: false },
   ]);
-  const credit = 0;
+  const credit = 0; // 사용량 수치는 추후 연결(현재는 플랜 텍스트만 SS_USER에서 표기)
   const creditMax = 100;
+  const [userCredit, setUserCredit] = useState(null); // SS_USER.user_credit (e.g., standard/pro/business)
 
   // Personas state
   const [personas, setPersonas] = useState([]); // [{ num, img, name }]
@@ -31,6 +33,7 @@ export default function MyPage() {
   const [igError, setIgError] = useState(null);
   const [igMapping, setIgMapping] = useState(null); // { user_id, user_persona_num, ig_user_id, ig_username, fb_page_id }
   const [igMappingLoading, setIgMappingLoading] = useState(false);
+  const [showCreditModal, setShowCreditModal] = useState(false);
   // Insights는 마이페이지에서 표시하지 않음(대시보드 전용)
   // But we do show a simple follower count in header when linked
   const [followerCount, setFollowerCount] = useState(null);
@@ -39,6 +42,9 @@ export default function MyPage() {
   const [instaPosts, setInstaPosts] = useState([]); // [{id, media_url, thumbnail_url, permalink, timestamp, like_count, comments_count}]
   const [instaLoading, setInstaLoading] = useState(false);
   const [instaError, setInstaError] = useState(null);
+  // Manage mode toggles
+  const [managePhotos, setManagePhotos] = useState(false);
+  const [managePosts, setManagePosts] = useState(false);
 
   // Helper: build and navigate to OAuth start (keeps current flags)
   const startInstagramOAuth = useCallback(() => {
@@ -85,6 +91,17 @@ export default function MyPage() {
         setLoadingPersona(false);
       }
     })();
+    // 동시에 현재 사용자 크레딧 플랜 조회
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/auth/me`, { credentials: "include" });
+        if (!r.ok) return;
+        const me = await r.json();
+        if (!alive) return;
+        const creditPlan = me?.user?.credit || null;
+        setUserCredit(creditPlan);
+      } catch {}
+    })();
     return () => { alive = false; };
   }, []);
 
@@ -100,6 +117,9 @@ export default function MyPage() {
     // Clear gallery to force reload
     setGallery([]);
     setGalleryError(null);
+    // Reset manage modes
+    setManagePhotos(false);
+    setManagePosts(false);
   };
 
   // After Instagram OAuth returns (?ig=connected), auto-open integrations modal and clean URL.
@@ -236,6 +256,8 @@ export default function MyPage() {
     const load = async () => {
       if (tab !== "posts") return;
       if (!activePersona?.num) return;
+      // leaving photos tab -> ensure managePhotos off
+      setManagePhotos(false);
       setInstaLoading(true);
       setInstaError(null);
       try {
@@ -258,6 +280,8 @@ export default function MyPage() {
     const load = async () => {
       if (tab !== "photos") return;
       if (!activePersona?.num) return;
+      // leaving posts tab -> ensure managePosts off
+      setManagePosts(false);
       setGalleryLoading(true);
       setGalleryError(null);
       try {
@@ -281,11 +305,12 @@ export default function MyPage() {
         <HeaderSummary
           credit={credit}
           creditMax={creditMax}
+          userCredit={userCredit}
           personaName={activePersona?.name}
           personaImg={activePersona?.img}
           igLinked={!!igMapping}
           followerCount={followerCount}
-          onOpenIntegrations={() => { setSelectorOpen(false); setIntegrationsOpen(true); }}
+          onOpenCredits={() => setShowCreditModal(true)}
           onOpenProfileChange={() => { if (!integrationsOpen) setSelectorOpen(true); }}
           loadingPersona={loadingPersona}
         />
@@ -351,21 +376,27 @@ export default function MyPage() {
               <Card>
                 <div className="flex items-center justify-between mb-3">
                   <div className="text-sm text-slate-500">갤러리 {Array.isArray(gallery) ? gallery.length : 0}장</div>
-                  <button className="btn light" onClick={() => {
-                    // manual refresh
-                    setTab("photos");
-                    // trigger effect
-                    setGalleryLoading(true);
-                    (async () => {
-                      try {
-                        const res = await fetch(`${API_BASE}/api/chat/gallery?persona_num=${activePersona?.num || ''}`, { credentials: "include" });
-                        if (res.ok) {
-                          const data = await res.json();
-                          setGallery(Array.isArray(data?.items) ? data.items : []);
-                        }
-                      } finally { setGalleryLoading(false); }
-                    })();
-                  }}>새로고침</button>
+                  <div className="flex items-center gap-2">
+                    <button className="btn light" onClick={() => {
+                      // manual refresh
+                      setTab("photos");
+                      // trigger effect
+                      setGalleryLoading(true);
+                      (async () => {
+                        try {
+                          const res = await fetch(`${API_BASE}/api/chat/gallery?persona_num=${activePersona?.num || ''}`, { credentials: "include" });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setGallery(Array.isArray(data?.items) ? data.items : []);
+                          }
+                        } finally { setGalleryLoading(false); }
+                      })();
+                    }}>새로고침</button>
+                    <button
+                      className={`btn ${managePhotos ? 'primary' : 'light'}`}
+                      onClick={() => setManagePhotos((v) => !v)}
+                    >{managePhotos ? '관리 종료' : '사진 관리'}</button>
+                  </div>
                 </div>
                 {galleryLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
                 {galleryError && <div className="text-sm text-red-600">갤러리를 불러오지 못했습니다: {galleryError}</div>}
@@ -380,6 +411,25 @@ export default function MyPage() {
                           <img src={g.url} alt="" className="w-full h-36 object-cover" loading="lazy" />
                         ) : (
                           <div className="w-full h-36 bg-slate-100" />
+                        )}
+                        {managePhotos && (
+                          <button
+                            className="absolute top-2 right-2 text-[11px] px-2 py-1 rounded-full bg-white/90 border border-slate-200 hover:bg-white shadow"
+                            title="사진 삭제"
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!g.id) return;
+                              if (!window.confirm("이 이미지를 삭제할까요? (스토리지에서도 제거됩니다)")) return;
+                              try {
+                                const r = await fetch(`${API_BASE}/api/chat/gallery/${g.id}`, { method: 'DELETE', credentials: 'include' });
+                                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                                setGallery((prev) => (Array.isArray(prev) ? prev.filter((x) => x.id !== g.id) : prev));
+                              } catch (err) {
+                                alert(`삭제에 실패했습니다: ${err?.message || err}`);
+                              }
+                            }}
+                          >삭제</button>
                         )}
                         {g.created_at && (
                           <div className="absolute bottom-0 left-0 right-0 text-[10px] text-white/90 bg-black/30 px-2 py-1">
@@ -407,13 +457,12 @@ export default function MyPage() {
                     <div className="text-sm text-slate-500">인스타 게시글 {Array.isArray(instaPosts) ? instaPosts.length : 0}개</div>
                     <div className="flex items-center gap-2">
                       <button
-                        className="btn light"
+                        className="btn"
                         onClick={async () => {
                           if (!activePersona?.num) { setSelectorOpen(true); return; }
                           setInstaLoading(true);
                           try {
                             await fetch(`${API_BASE}/api/instagram/posts/sync?persona_num=${activePersona.num}&limit=18&days=30`, { method: 'POST', credentials: 'include' });
-                            // ignore errors, then reload list
                           } catch (err) { console.debug('[MyPage] posts sync failed', err); }
                           try {
                             const r = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
@@ -424,17 +473,10 @@ export default function MyPage() {
                           } finally { setInstaLoading(false); }
                         }}
                       >동기화</button>
-                      <button className="btn" onClick={async () => {
-                        if (!activePersona?.num) { setSelectorOpen(true); return; }
-                        setInstaLoading(true);
-                        try {
-                          const r = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
-                          if (r.ok) {
-                            const data = await r.json();
-                            setInstaPosts(Array.isArray(data?.items) ? data.items : []);
-                          }
-                        } finally { setInstaLoading(false); }
-                      }}>새로고침</button>
+                      <button
+                        className={`btn ${managePosts ? 'primary' : 'light'}`}
+                        onClick={() => setManagePosts((v) => !v)}
+                      >{managePosts ? '관리 종료' : '게시글 관리'}</button>
                     </div>
                   </div>
                   {instaLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
@@ -454,6 +496,31 @@ export default function MyPage() {
                             <div className="w-full h-36 bg-slate-100" />
                           )}
                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                          {managePosts && (
+                            <button
+                              className="absolute top-2 right-2 text-[11px] px-2 py-1 rounded-full bg-white/90 border border-slate-200 hover:bg-white shadow"
+                              title="게시글 삭제"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!activePersona?.num) { setSelectorOpen(true); return; }
+                                if (!window.confirm("이 인스타 게시글을 삭제할까요? (목록에서는 제거되며, 인스타 삭제는 API 제한으로 실패할 수 있습니다)")) return;
+                                try {
+                                  const r = await fetch(`${API_BASE}/api/instagram/posts/${encodeURIComponent(p.id)}?persona_num=${activePersona.num}`, { method: 'DELETE', credentials: 'include' });
+                                  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                                  const data = await r.json().catch(() => ({}));
+                                  setInstaPosts((prev) => (Array.isArray(prev) ? prev.filter((x) => x.id !== p.id) : prev));
+                                  if (data && data.deleted_on_instagram) {
+                                    alert("인스타그램에서 게시글이 삭제되었습니다.");
+                                  } else {
+                                    alert("목록에서 제거되었습니다. 인스타그램 앱에서 직접 삭제를 완료해 주세요 (API에서 게시글 삭제가 지원되지 않습니다).");
+                                  }
+                                } catch (err) {
+                                  alert(`삭제에 실패했습니다: ${err?.message || err}`);
+                                }
+                              }}
+                            >삭제</button>
+                          )}
                           <div className="absolute bottom-0 left-0 right-0 text-[10px] text-white/90 bg-black/30 px-2 py-1 flex items-center justify-between gap-2">
                             <span>{p.timestamp ? new Date(p.timestamp).toLocaleString() : ''}</span>
                             <span>❤ {fmtNum(p.like_count)} · 💬 {fmtNum(p.comments_count)}</span>
@@ -581,12 +648,26 @@ export default function MyPage() {
           </div>
         </div>
       )}
+
+      {/* Credit Plans modal */}
+      {showCreditModal && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" onClick={() => setShowCreditModal(false)}>
+          <div className="w-[min(1100px,96vw)] rounded-2xl border border-slate-200 bg-white shadow-[0_30px_70px_rgba(2,6,23,0.28)] overflow-visible" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 flex items-center justify-between border-b">
+              <div className="font-semibold">크레딧 / 요금제</div>
+              <button className="btn" onClick={() => setShowCreditModal(false)}>닫기</button>
+            </div>
+            <div className="p-5">
+              <Credit />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }          
 
-function HeaderSummary({ credit, creditMax, personaName, personaImg, igLinked, followerCount, onOpenIntegrations, onOpenProfileChange, loadingPersona }) {
-  const pct = Math.min(100, Math.round((credit / creditMax) * 100));
+function HeaderSummary({ credit, creditMax, userCredit, personaName, personaImg, igLinked, followerCount, onOpenCredits, onOpenProfileChange, loadingPersona }) {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white/80 backdrop-blur p-6 shadow-[0_10px_30px_rgba(30,64,175,0.08)]">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
@@ -616,14 +697,11 @@ function HeaderSummary({ credit, creditMax, personaName, personaImg, igLinked, f
         <div className="w-full md:w-80">
           <div className="flex justify-between text-xs text-slate-500 mb-1">
             <span>크레딧</span>
-            <span>{credit} / {creditMax}</span>
-          </div>
-          <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-full bg-linear-to-r from-blue-400 to-indigo-500" style={{ width: `${pct}%` }} />
+            <span>{userCredit ? String(userCredit).toUpperCase() : "-"}</span>
           </div>
           <div className="mt-3 flex gap-2">
             <button className="btn primary grow" onClick={onOpenProfileChange}>프로필 교체하기</button>
-            <button className="btn light" onClick={onOpenIntegrations}>연동관리</button>
+            <button className="btn light" onClick={onOpenCredits}>크레딧</button>
           </div>
         </div>
       </div>
