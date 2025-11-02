@@ -203,7 +203,7 @@ export default function ProfileSelect({ maxSlots = 4, onProfileChosen, onAddProf
         </div>
 
         <div className="actions">
-          <button className="btn" type="button" onClick={() => {}}>
+          <button className="btn" type="button" onClick={() => navigate('/profiles/manage')}>
             프로필 관리
           </button>
           <button

@@ -11,6 +11,7 @@ import UserSetup from "./UserSetup.jsx";
 import Chat from "./Chat.jsx";
 import Alerts from "./Alerts.jsx";
 import Profiles from "./Profiles.jsx";
+import ManageProfiles from "./ManageProfiles.jsx";
 import ChatGateModal from "../components/ChatGateModal.jsx";
 import Dashboard from "./Dashboard.jsx";
 import DashboardInsights from "./DashboardInsights.jsx";
@@ -357,6 +358,7 @@ export default function App() {
           {/* Imgcreate는 모달로도 띄우지만, 라우트 직접 접근도 허용 */}
           <Route path="/imgcreate" element={<Imgcreate />} />
           <Route path="/profiles" element={<Profiles />} />
+          <Route path="/profiles/manage" element={<ManageProfiles />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/dashboard/insights" element={<Dashboard />} />
