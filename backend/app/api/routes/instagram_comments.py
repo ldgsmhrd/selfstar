@@ -626,3 +626,101 @@ async def debug_comments_raw(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"comments_raw_failed:{e}")
+
+
+@router.get("/media/{media_id}/comments")
+async def get_media_comments(
+    request: Request,
+    media_id: str,
+    persona_num: Optional[int] = None,
+    limit: int = 50,
+    include_replies: bool = True,
+    replies_limit: int = 10,
+):
+    """Return recent comments for a specific media.
+
+    - persona_num is required to use the correct linked IG token
+    - include_replies optionally fetches a few replies for each top-level comment
+    """
+    uid = _require_login(request)
+    if persona_num is None:
+        raise HTTPException(status_code=400, detail="persona_num_required")
+
+    # Ensure persona is linked and token is available
+    mapping = await _get_persona_instagram_mapping(int(uid), int(persona_num))
+    if not mapping or not mapping.get("ig_user_id"):
+        raise HTTPException(status_code=400, detail="persona_not_linked")
+    token = await _get_persona_token(int(uid), int(persona_num))
+    if not token:
+        raise HTTPException(status_code=401, detail="persona_oauth_required")
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            # Fetch top-level comments
+            cr = await client.get(
+                f"{IG_GRAPH}/{media_id}/comments",
+                params={
+                    "access_token": token,
+                    "fields": "id,text,username,timestamp,like_count",
+                    "limit": max(1, int(limit)),
+                },
+            )
+            if cr.status_code != 200:
+                try:
+                    err = (cr.json() or {}).get("error") or {}
+                    if err.get("code") == 190:
+                        raise HTTPException(status_code=401, detail="persona_oauth_required")
+                except HTTPException:
+                    raise
+                except Exception:
+                    pass
+                raise HTTPException(status_code=cr.status_code, detail=cr.text)
+
+            comments = (cr.json() or {}).get("data") or []
+            items: List[Dict[str, Any]] = []
+            for c in comments:
+                cid = c.get("id")
+                if not cid:
+                    continue
+                item = {
+                    "id": cid,
+                    "text": c.get("text"),
+                    "username": c.get("username"),
+                    "timestamp": c.get("timestamp"),
+                    "like_count": c.get("like_count"),
+                }
+                # Optionally fetch replies for each comment
+                if include_replies:
+                    try:
+                        rr = await client.get(
+                            f"{IG_GRAPH}/{cid}/replies",
+                            params={
+                                "access_token": token,
+                                "fields": "id,text,username,timestamp,like_count",
+                                "limit": max(1, int(replies_limit)),
+                            },
+                        )
+                        if rr.status_code == 200:
+                            reps = (rr.json() or {}).get("data") or []
+                            item["replies"] = [
+                                {
+                                    "id": r.get("id"),
+                                    "text": r.get("text"),
+                                    "username": r.get("username"),
+                                    "timestamp": r.get("timestamp"),
+                                    "like_count": r.get("like_count"),
+                                }
+                                for r in reps
+                                if r.get("id")
+                            ]
+                        else:
+                            item["replies"] = []
+                    except Exception:
+                        item["replies"] = []
+                items.append(item)
+
+        return {"ok": True, "items": items}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"media_comments_failed:{e}")

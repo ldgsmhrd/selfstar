@@ -45,6 +45,21 @@ export default function MyPage() {
   // Manage mode toggles
   const [managePhotos, setManagePhotos] = useState(false);
   const [managePosts, setManagePosts] = useState(false);
+  // Post preview & comment modal
+  const [postModalOpen, setPostModalOpen] = useState(false);
+  const [postModalItem, setPostModalItem] = useState(null);
+  const [commentText, setCommentText] = useState("");
+  const [commenting, setCommenting] = useState(false);
+  const [drafting, setDrafting] = useState(false);
+  // Modal comments (other users) state
+  const [modalComments, setModalComments] = useState([]); // [{id, text, username, timestamp, like_count, replies?}]
+  const [modalCommentsLoading, setModalCommentsLoading] = useState(false);
+  const [modalCommentsError, setModalCommentsError] = useState(null);
+  // Per-comment reply inputs and status maps
+  const [replyInputs, setReplyInputs] = useState({}); // { [commentId]: text }
+  const [draftingMap, setDraftingMap] = useState({}); // { [commentId]: bool }
+  const [replyingMap, setReplyingMap] = useState({}); // { [commentId]: bool }
+  const [autoReplyingMap, setAutoReplyingMap] = useState({}); // { [commentId]: bool }
 
   // Helper: build and navigate to OAuth start (keeps current flags)
   const startInstagramOAuth = useCallback(() => {
@@ -261,10 +276,25 @@ export default function MyPage() {
       setInstaLoading(true);
       setInstaError(null);
       try {
-  const res = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
+        // 1) 먼저 캐시에서 가져오기
+        const res = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
-        setInstaPosts(Array.isArray(data?.items) ? data.items : []);
+        const items = Array.isArray(data?.items) ? data.items : [];
+        setInstaPosts(items);
+        // 2) 캐시가 비어 있고 IG 연동되어 있으면 즉시 동기화 시도
+        if (items.length === 0 && igMapping?.ig_user_id) {
+          try {
+            await fetch(`${API_BASE}/api/instagram/posts/sync?persona_num=${activePersona.num}&limit=18&days=30`, { method: 'POST', credentials: 'include' });
+            const r = await fetch(`${API_BASE}/api/instagram/posts?persona_num=${activePersona.num}&limit=18`, { credentials: 'include' });
+            if (r.ok) {
+              const dj = await r.json();
+              setInstaPosts(Array.isArray(dj?.items) ? dj.items : []);
+            }
+          } catch (err) {
+            // 동기화 실패는 치명적 아님
+          }
+        }
       } catch (e) {
         setInstaPosts([]);
         setInstaError(e?.message || String(e));
@@ -273,7 +303,7 @@ export default function MyPage() {
       }
     };
     load();
-  }, [tab, activePersona?.num]);
+  }, [tab, activePersona?.num, igMapping?.ig_user_id]);
 
   // Load chat images gallery when Photos tab is active or persona changes
   useEffect(() => {
@@ -298,6 +328,31 @@ export default function MyPage() {
     };
     load();
   }, [tab, activePersona?.num]);
+
+  // Load comments for selected post when modal opens or context changes
+  useEffect(() => {
+    const loadComments = async () => {
+      if (!postModalOpen || !postModalItem?.id || !activePersona?.num) {
+        setModalComments([]);
+        setModalCommentsError(null);
+        return;
+      }
+      setModalCommentsLoading(true);
+      setModalCommentsError(null);
+      try {
+        const r = await fetch(`${API_BASE}/api/instagram/media/${encodeURIComponent(postModalItem.id)}/comments?persona_num=${activePersona.num}&limit=50`, { credentials: 'include' });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        setModalComments(Array.isArray(j?.items) ? j.items : []);
+      } catch (e) {
+        setModalComments([]);
+        setModalCommentsError(e?.message || String(e));
+      } finally {
+        setModalCommentsLoading(false);
+      }
+    };
+    loadComments();
+  }, [postModalOpen, postModalItem?.id, activePersona?.num]);
 
   return (
     <main className="w-full min-h-screen bg-[#eaf5ff]">
@@ -480,14 +535,21 @@ export default function MyPage() {
                     </div>
                   </div>
                   {instaLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
-                  {instaError && <div className="text-sm text-red-600">게시글을 불러오지 못했습니다: {instaError}</div>}
+                  {instaError && (
+                    <div className="text-sm text-red-600">
+                      게시글을 불러오지 못했습니다: {instaError}
+                      {(String(instaError).includes('401') || String(instaError).includes('HTTP 401')) && (
+                        <div className="mt-1 text-slate-700">인스타그램 연동이 필요하거나 인증이 만료되었습니다. 우측의 연동 관리에서 재인증해 주세요.</div>
+                      )}
+                    </div>
+                  )}
                   {!instaLoading && !instaError && Array.isArray(instaPosts) && instaPosts.length === 0 && (
                     <Empty title="연동된 인스타 게시글이 없어요" action="동기화" />
                   )}
                   {!instaLoading && !instaError && Array.isArray(instaPosts) && instaPosts.length > 0 && (
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                       {instaPosts.map((p) => (
-                        <a key={p.id} href={p.permalink || '#'} target="_blank" rel="noreferrer" className="block group relative rounded-xl overflow-hidden border border-slate-200 bg-white/60">
+                        <button key={p.id} type="button" onClick={(e)=>{ e.preventDefault(); setPostModalItem(p); setCommentText(""); setPostModalOpen(true); }} className="text-left group relative rounded-xl overflow-hidden border border-slate-200 bg-white/60">
                           {p.media_type === 'VIDEO' && p.thumbnail_url ? (
                             <img src={p.thumbnail_url} alt="" className="w-full h-36 object-cover" loading="lazy" />
                           ) : p.media_url ? (
@@ -525,7 +587,7 @@ export default function MyPage() {
                             <span>{p.timestamp ? new Date(p.timestamp).toLocaleString() : ''}</span>
                             <span>❤ {fmtNum(p.like_count)} · 💬 {fmtNum(p.comments_count)}</span>
                           </div>
-                        </a>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -659,6 +721,244 @@ export default function MyPage() {
             </div>
             <div className="p-5">
               <Credit />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Post preview & comment modal */}
+      {postModalOpen && postModalItem && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4" role="dialog" aria-modal="true" onClick={()=> setPostModalOpen(false)}>
+          <div className="w-[min(900px,96vw)] rounded-2xl border border-slate-200 bg-white shadow-[0_30px_70px_rgba(2,6,23,0.28)] overflow-hidden" onClick={(e)=>e.stopPropagation()}>
+            <div className="px-5 py-4 flex items-center justify-between border-b">
+              <div className="font-semibold">게시글 미리보기</div>
+              <div className="flex items-center gap-2">
+                {postModalItem?.permalink && (
+                  <a href={postModalItem.permalink} target="_blank" rel="noreferrer" className="btn light">인스타에서 열기</a>
+                )}
+                <button className="btn" onClick={()=> setPostModalOpen(false)}>닫기</button>
+              </div>
+            </div>
+            <div className="p-5 grid md:grid-cols-2 gap-4">
+              <div>
+                {postModalItem.media_type === 'VIDEO' && postModalItem.thumbnail_url ? (
+                  <img src={postModalItem.thumbnail_url} alt="" className="w-full rounded-xl object-cover border" />
+                ) : postModalItem.media_url ? (
+                  <img src={postModalItem.media_url} alt="" className="w-full rounded-xl object-cover border" />
+                ) : (
+                  <div className="w-full aspect-square rounded-xl bg-slate-100" />
+                )}
+                <div className="text-xs text-slate-500 mt-2 flex items-center gap-2">
+                  <span>{postModalItem.timestamp ? new Date(postModalItem.timestamp).toLocaleString() : ''}</span>
+                  <span className="inline-flex items-center px-1.5 py-[1px] rounded bg-slate-100 border text-[10px]">{postModalItem.media_type || ''}</span>
+                </div>
+                <div className="text-sm mt-2 whitespace-pre-wrap break-words">{postModalItem.caption}</div>
+              </div>
+              <div className="space-y-3">
+                {/* Other users' comments list with per-comment reply */}
+                <div className="rounded-xl border bg-white/70 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs text-slate-500">다른 사용자 댓글</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn light"
+                        onClick={async ()=>{
+                          if(!activePersona?.num) { setSelectorOpen(true); return; }
+                          setModalCommentsLoading(true);
+                          setModalCommentsError(null);
+                          try{
+                            const r = await fetch(`${API_BASE}/api/instagram/media/${encodeURIComponent(postModalItem.id)}/comments?persona_num=${activePersona.num}&limit=50`, { credentials: 'include' });
+                            if(!r.ok){ throw new Error(`HTTP ${r.status}`); }
+                            const j = await r.json();
+                            setModalComments(Array.isArray(j?.items)? j.items : []);
+                          }catch(e){ setModalComments([]); setModalCommentsError(e?.message || String(e)); }
+                          finally{ setModalCommentsLoading(false); }
+                        }}
+                      >새로고침</button>
+                    </div>
+                  </div>
+                  {modalCommentsLoading && <div className="text-sm text-slate-500">불러오는 중…</div>}
+                  {modalCommentsError && <div className="text-sm text-red-600">댓글을 불러오지 못했습니다: {modalCommentsError}</div>}
+                  {!modalCommentsLoading && !modalCommentsError && Array.isArray(modalComments) && modalComments.length === 0 && (
+                    <div className="text-sm text-slate-500">표시할 댓글이 없습니다.</div>
+                  )}
+                  {!modalCommentsLoading && !modalCommentsError && Array.isArray(modalComments) && modalComments.length > 0 && (
+                    <div className="space-y-3 max-h-80 overflow-auto pr-1">
+                      {modalComments.map((c) => (
+                        <div key={c.id} className="rounded-lg border border-slate-200 bg-white/60 p-2">
+                          <div className="text-xs text-slate-500 flex items-center justify-between">
+                            <span className="font-semibold">@{c.username || 'user'}</span>
+                            <span>{c.timestamp ? new Date(c.timestamp).toLocaleString() : ''}</span>
+                          </div>
+                          <div className="text-sm mt-1 whitespace-pre-wrap break-words">{c.text}</div>
+                          {Array.isArray(c.replies) && c.replies.length > 0 && (
+                            <div className="mt-2 pl-3 border-l">
+                              {c.replies.map(r => (
+                                <div key={r.id} className="text-[13px] text-slate-700 mt-1">
+                                  <span className="font-medium">@{r.username || 'user'}</span> {r.text}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="mt-2">
+                            <textarea
+                              rows={2}
+                              className="w-full rounded-lg border p-2 text-sm"
+                              placeholder="이 댓글에 답글 작성"
+                              value={replyInputs[c.id] || ''}
+                              onChange={(e)=> setReplyInputs(prev => ({ ...prev, [c.id]: e.target.value }))}
+                            />
+                            <div className="mt-2 flex items-center justify-end gap-2">
+                              <button
+                                className="btn light"
+                                disabled={!!draftingMap[c.id]}
+                                onClick={async ()=>{
+                                  if(!activePersona?.num){ setSelectorOpen(true); return; }
+                                  setDraftingMap(prev=> ({ ...prev, [c.id]: true }));
+                                  try{
+                                    const r = await fetch(`${API_BASE}/api/instagram/comments/auto_draft`, {
+                                      method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                                      body: JSON.stringify({ persona_num: activePersona.num, text: c.text || ' ', post_img: postModalItem.media_url || postModalItem.thumbnail_url || '', post: postModalItem.caption || '' })
+                                    });
+                                    const j = await r.json().catch(()=>null);
+                                    if(r.ok && j?.reply){ setReplyInputs(prev => ({ ...prev, [c.id]: j.reply })); }
+                                    else{ alert(`자동완성 실패: ${j?.detail || r.status}`); }
+                                  }catch(e){ alert(`자동완성 오류: ${e?.message || e}`); }
+                                  finally{ setDraftingMap(prev=> ({ ...prev, [c.id]: false })); }
+                                }}
+                              >{draftingMap[c.id]? '생성 중…':'자동완성'}</button>
+                              <button
+                                className="btn"
+                                disabled={!String(replyInputs[c.id]||'').trim() || !!replyingMap[c.id]}
+                                onClick={async ()=>{
+                                  if(!activePersona?.num){ setSelectorOpen(true); return; }
+                                  const msg = String(replyInputs[c.id]||'').trim();
+                                  if(!msg) return;
+                                  setReplyingMap(prev=> ({ ...prev, [c.id]: true }));
+                                  try{
+                                    const r = await fetch(`${API_BASE}/api/instagram/comments/reply`, {
+                                      method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                                      body: JSON.stringify({ persona_num: activePersona.num, comment_id: c.id, message: msg })
+                                    });
+                                    const j = await r.json().catch(()=>null);
+                                    if(r.ok){
+                                      alert('답글이 등록되었습니다.');
+                                      setReplyInputs(prev => ({ ...prev, [c.id]: '' }));
+                                      // optional refresh
+                                      try{
+                                        setModalCommentsLoading(true);
+                                        const rr = await fetch(`${API_BASE}/api/instagram/media/${encodeURIComponent(postModalItem.id)}/comments?persona_num=${activePersona.num}&limit=50`, { credentials: 'include' });
+                                        if(rr.ok){ const jj = await rr.json(); setModalComments(Array.isArray(jj?.items)? jj.items : []); }
+                                      } finally { setModalCommentsLoading(false); }
+                                    } else {
+                                      const d = j?.detail || j || {};
+                                      const msg2 = typeof d==='string'? d : (d?.error || d?.message || JSON.stringify(d));
+                                      alert(`답글 실패: ${msg2}`);
+                                    }
+                                  }catch(e){ alert(`답글 오류: ${e?.message || e}`); }
+                                  finally{ setReplyingMap(prev=> ({ ...prev, [c.id]: false })); }
+                                }}
+                              >{replyingMap[c.id]? '등록 중…':'답글 달기'}</button>
+                              <button
+                                className="btn primary"
+                                disabled={!!autoReplyingMap[c.id]}
+                                onClick={async ()=>{
+                                  if(!activePersona?.num){ setSelectorOpen(true); return; }
+                                  setAutoReplyingMap(prev=> ({ ...prev, [c.id]: true }));
+                                  try{
+                                    const r = await fetch(`${API_BASE}/api/instagram/comments/auto_reply`, {
+                                      method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                                      body: JSON.stringify({ persona_num: activePersona.num, comment_id: c.id, text: c.text || ' ', post_img: postModalItem.media_url || postModalItem.thumbnail_url || '', post: postModalItem.caption || '' })
+                                    });
+                                    const j = await r.json().catch(()=>null);
+                                    if(r.ok){
+                                      alert('자동 생성·등록 완료');
+                                      setReplyInputs(prev => ({ ...prev, [c.id]: j?.reply || '' }));
+                                      // optional refresh
+                                      try{
+                                        setModalCommentsLoading(true);
+                                        const rr = await fetch(`${API_BASE}/api/instagram/media/${encodeURIComponent(postModalItem.id)}/comments?persona_num=${activePersona.num}&limit=50`, { credentials: 'include' });
+                                        if(rr.ok){ const jj = await rr.json(); setModalComments(Array.isArray(jj?.items)? jj.items : []); }
+                                      } finally { setModalCommentsLoading(false); }
+                                    } else {
+                                      const d = j?.detail || j || {};
+                                      const msg2 = typeof d==='string'? d : (d?.error || d?.message || JSON.stringify(d));
+                                      alert(`자동 등록 실패: ${msg2}`);
+                                    }
+                                  }catch(e){ alert(`자동 등록 오류: ${e?.message || e}`); }
+                                  finally{ setAutoReplyingMap(prev=> ({ ...prev, [c.id]: false })); }
+                                }}
+                              >{autoReplyingMap[c.id]? '자동 등록 중…':'자동 등록'}</button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!igMapping?.ig_user_id && (
+                    <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded mt-2 px-2 py-1">인스타 연동이 필요합니다. 마이페이지에서 계정을 연동해 주세요.</div>
+                  )}
+                </div>
+                <div className="rounded-xl border bg-white/70 p-3">
+                  <div className="text-xs text-slate-500 mb-2">댓글 작성</div>
+                  <textarea value={commentText} onChange={(e)=> setCommentText(e.target.value)} rows={5} className="w-full rounded-lg border p-2 text-sm" placeholder="댓글을 입력하세요" />
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="text-[11px] text-slate-500">❤ {fmtNum(postModalItem.like_count)} · 💬 {fmtNum(postModalItem.comments_count)}</div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="btn light"
+                        disabled={drafting}
+                        onClick={async ()=>{
+                          if(!activePersona?.num){ setSelectorOpen(true); return; }
+                          setDrafting(true);
+                          try{
+                            const r = await fetch(`${API_BASE}/api/instagram/comments/auto_draft`, {
+                              method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify({ persona_num: activePersona.num, text: commentText || ' ', post_img: postModalItem.media_url || postModalItem.thumbnail_url || '', post: postModalItem.caption || '' })
+                            });
+                            const j = await r.json().catch(()=>null);
+                            if(r.ok && j?.reply){ setCommentText(j.reply); }
+                            else {
+                              alert(`자동완성 실패: ${j?.detail || r.status}`);
+                            }
+                          }catch(e){ alert(`자동완성 오류: ${e?.message || e}`); }
+                          finally{ setDrafting(false); }
+                        }}
+                      >{drafting? '생성 중…':'자동완성'}</button>
+                      <button
+                        className="btn primary"
+                        disabled={!commentText.trim() || commenting}
+                        onClick={async ()=>{
+                          if(!activePersona?.num){ setSelectorOpen(true); return; }
+                          setCommenting(true);
+                          try{
+                            const r = await fetch(`${API_BASE}/api/instagram/media/${encodeURIComponent(postModalItem.id)}/comment`, {
+                              method:'POST', credentials:'include', headers:{'Content-Type':'application/json'},
+                              body: JSON.stringify({ persona_num: activePersona.num, message: commentText.trim() })
+                            });
+                            const j = await r.json().catch(()=>null);
+                            if(r.ok){
+                              alert('댓글이 등록되었습니다.');
+                              // 로컬 카운트 +1 반영
+                              setInstaPosts(prev => prev.map(x=> x.id===postModalItem.id? { ...x, comments_count: (Number(x.comments_count||0)+1) } : x));
+                              setPostModalItem(pm => pm? { ...pm, comments_count: Number(pm.comments_count||0)+1 } : pm);
+                              setCommentText('');
+                            }else{
+                              const d = j?.detail || j || {};
+                              const msg = typeof d==='string'? d : (d?.error || d?.message || JSON.stringify(d));
+                              alert(`댓글 실패: ${msg}`);
+                            }
+                          }catch(e){ alert(`댓글 오류: ${e?.message || e}`); }
+                          finally{ setCommenting(false); }
+                        }}
+                      >{commenting? '등록 중…':'댓글 달기'}</button>
+                    </div>
+                  </div>
+                  {!igMapping?.ig_user_id && (
+                    <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded mt-2 px-2 py-1">인스타 연동이 필요합니다. 마이페이지에서 계정을 연동해 주세요.</div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
